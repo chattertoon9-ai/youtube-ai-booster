@@ -1,44 +1,70 @@
 import os
 from google import genai
 from gtts import gTTS
+from moviepy.editor import AudioFileClip, ImageClip, CompositeVideoClip, TextClip
 
-# 1. Gemini Client Initialize karein
+# 1. Gemini Client Initialize
 client = genai.Client()
 
-def generate_youtube_script(topic):
+def generate_script(topic):
     prompt = f"""
-    Write a short, engaging YouTube video script about: "{topic}".
-    Format requirements:
-    - Include a strong hook in the first 5 seconds.
-    - Keep it concise (around 1-2 minutes spoken time).
-    - Write ONLY the narration text (do not include visual cues, bracketed text, or speaker labels).
+    Write a short, engaging YouTube Shorts/Video script about: "{topic}".
+    Write ONLY narration text for voiceover. No visual cues, no brackets, no labels.
+    Keep it within 100 words.
     """
-    
-    print("Generating script via Gemini API...")
+    print("Generating script with Gemini...")
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt
     )
     return response.text.strip()
 
-def create_voiceover(text, output_filename="voiceover.mp3"):
-    print("Generating voiceover audio...")
-    # Clean text from any remaining formatting symbols
+def create_voiceover(text, audio_path="voiceover.mp3"):
+    print("Generating voiceover...")
     clean_text = text.replace("*", "").replace("#", "")
-    
     tts = gTTS(text=clean_text, lang='en', slow=False)
-    tts.save(output_filename)
-    print(f"Voiceover saved as: {output_filename}")
+    tts.save(audio_path)
+    return audio_path
+
+def create_video(audio_path, image_path, output_path="final_video.mp4"):
+    print("Rendering video...")
+    # Load audio
+    audio_clip = AudioFileClip(audio_path)
+    
+    # Create image background with duration matching the voiceover
+    image_clip = ImageClip(image_path).set_duration(audio_clip.duration)
+    
+    # Set video audio
+    video_clip = image_clip.set_audio(audio_clip)
+    
+    # Render final MP4 file (FPS 24 standard)
+    video_clip.write_videofile(
+        output_path, 
+        fps=24, 
+        codec='libx264', 
+        audio_codec='aac'
+    )
+    
+    # Close clips to free RAM
+    audio_clip.close()
+    video_clip.close()
+    print(f"Video rendered successfully: {output_path}")
 
 if __name__ == "__main__":
-    # Test Topic
-    video_topic = "Top 5 Mind-Blowing Facts About Space"
+    topic = "3 Unknown Secrets About AI"
     
-    # Run Script Generation
-    script_text = generate_youtube_script(video_topic)
-    print("\n--- Generated Script ---")
-    print(script_text)
-    print("------------------------\n")
+    # Path for background image (Aap apne folder mein koi bhi background.jpg rakhein)
+    bg_image = "background.jpg" 
     
-    # Run Voiceover Generation
-    create_voiceover(script_text)
+    if not os.path.exists(bg_image):
+        print(f"Warning: Please place a '{bg_image}' file in your project folder!")
+    else:
+        # 1. Script
+        script = generate_script(topic)
+        print("\n--- Script ---\n", script, "\n--------------\n")
+        
+        # 2. Voiceover
+        audio_file = create_voiceover(script)
+        
+        # 3. Video
+        create_video(audio_file, bg_image)
