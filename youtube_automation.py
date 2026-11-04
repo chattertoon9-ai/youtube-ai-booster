@@ -1,70 +1,67 @@
 import os
-from google import genai
-from gtts import gTTS
-from moviepy.editor import AudioFileClip, ImageClip, CompositeVideoClip, TextClip
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
 
-# 1. Gemini Client Initialize
-client = genai.Client()
-
-def generate_script(topic):
-    prompt = f"""
-    Write a short, engaging YouTube Shorts/Video script about: "{topic}".
-    Write ONLY narration text for voiceover. No visual cues, no brackets, no labels.
-    Keep it within 100 words.
-    """
-    print("Generating script with Gemini...")
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
-    return response.text.strip()
-
-def create_voiceover(text, audio_path="voiceover.mp3"):
-    print("Generating voiceover...")
-    clean_text = text.replace("*", "").replace("#", "")
-    tts = gTTS(text=clean_text, lang='en', slow=False)
-    tts.save(audio_path)
-    return audio_path
-
-def create_video(audio_path, image_path, output_path="final_video.mp4"):
-    print("Rendering video...")
-    # Load audio
-    audio_clip = AudioFileClip(audio_path)
+def upload_to_youtube(video_path, title, description="Automated upload via Python script"):
+    print("Uploading video to YouTube...")
     
-    # Create image background with duration matching the voiceover
-    image_clip = ImageClip(image_path).set_duration(audio_clip.duration)
-    
-    # Set video audio
-    video_clip = image_clip.set_audio(audio_clip)
-    
-    # Render final MP4 file (FPS 24 standard)
-    video_clip.write_videofile(
-        output_path, 
-        fps=24, 
-        codec='libx264', 
-        audio_codec='aac'
+    # Credentials GitHub Secrets ya environment variables se liye jayenge
+    # (Local testing ke liye OAuth token file ya Service Account use hota hai)
+    creds = Credentials(
+        token=os.environ.get("YOUTUBE_ACCESS_TOKEN"),
+        refresh_token=os.environ.get("YOUTUBE_REFRESH_TOKEN"),
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=os.environ.get("YOUTUBE_CLIENT_ID"),
+        client_secret=os.environ.get("YOUTUBE_CLIENT_SECRET")
     )
     
-    # Close clips to free RAM
-    audio_clip.close()
-    video_clip.close()
-    print(f"Video rendered successfully: {output_path}")
+    youtube = build('youtube', 'v3', credentials=creds)
 
+    body = {
+        'snippet': {
+            'title': title,
+            'description': description,
+            'tags': ['automation', 'shorts', 'ai'],
+            'categoryId': '22'  # 22 category code People & Blogs ke liye hai
+        },
+        'status': {
+            'privacyStatus': 'public', # 'private', 'unlisted', ya 'public'
+            'selfDeclaredMadeForKids': False
+        }
+    }
+
+    # Media file upload setup (Resumable upload for large files)
+    media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype='video/mp4')
+
+    request = youtube.videos().insert(
+        part="snippet,status",
+        body=body,
+        media_body=media
+    )
+    
+    response = None
+    while response is None:
+        status, response = request.next_chunk()
+        if status:
+            print(f"Upload progress: {int(status.progress() * 100)}%")
+
+    print(f"Video uploaded successfully! Video ID: {response.get('id')}")
+
+# Main execution ke aakhir mein ise call karein:
 if __name__ == "__main__":
     topic = "3 Unknown Secrets About AI"
+    bg_image = "background.jpg"
     
-    # Path for background image (Aap apne folder mein koi bhi background.jpg rakhein)
-    bg_image = "background.jpg" 
+    # 1. Script generate karein
+    script = generate_script(topic)
     
-    if not os.path.exists(bg_image):
-        print(f"Warning: Please place a '{bg_image}' file in your project folder!")
-    else:
-        # 1. Script
-        script = generate_script(topic)
-        print("\n--- Script ---\n", script, "\n--------------\n")
-        
-        # 2. Voiceover
-        audio_file = create_voiceover(script)
-        
-        # 3. Video
-        create_video(audio_file, bg_image)
+    # 2. Voiceover banayein
+    audio_file = create_voiceover(script)
+    
+    # 3. Video render karein
+    output_video = "final_video.mp4"
+    create_video(audio_file, bg_image, output_video)
+    
+    # 4. YouTube par upload karein
+    # upload_to_youtube(output_video, title=topic)
