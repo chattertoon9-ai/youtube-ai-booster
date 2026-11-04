@@ -1,1 +1,1 @@
-pip install google-genai gtts
+pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
