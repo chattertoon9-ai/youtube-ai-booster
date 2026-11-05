@@ -12,7 +12,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 def generate_viral_content():
     print("AI is generating a viral script...")
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-3.8-flash')
     prompt = (
         "Write a short, highly engaging, viral YouTube Shorts script about an unknown psychological fact "
         "or mysterious AI secret. Keep it under 50 words, fast-paced, with a strong hook in the first 3 seconds. "
