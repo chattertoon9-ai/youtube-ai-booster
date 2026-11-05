@@ -21,9 +21,9 @@ def generate_viral_content():
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            # Naye client ka tareeqa script generate karne ke liye
+            # Gemini 2.0 Flash model use kar rahe hain
             response = client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-2.0-flash',
                 contents=prompt,
             )
             text = response.text
