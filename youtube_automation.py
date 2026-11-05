@@ -4,7 +4,7 @@ from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 import google.generativeai as genai
 from gtts import gTTS
-from moviepy.editor import AudioFileClip, ColorClip, TextClip, CompositeVideoClip
+from moviepy.editor import AudioFileClip, ColorClip
 
 # 1. Gemini API Configure Karein (Script Generation ke liye)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -12,7 +12,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 def generate_viral_content():
     print("AI is generating a viral script...")
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-pro')
     prompt = (
         "Write a short, highly engaging, viral YouTube Shorts script about an unknown psychological fact "
         "or mysterious AI secret. Keep it under 50 words, fast-paced, with a strong hook in the first 3 seconds. "
@@ -46,7 +46,7 @@ def create_video_file(audio_path):
     audio_clip = AudioFileClip(audio_path)
     duration = audio_clip.duration
     
-    # 9:16 vertical video shorts ke liye (Solid background color ya custom background)
+    # 9:16 vertical video shorts ke liye (Solid background color)
     bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 35), duration=duration)
     
     # Audio ko video ke sath sync karna
