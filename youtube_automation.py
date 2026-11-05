@@ -1,4 +1,5 @@
 import os
+import time
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
@@ -12,28 +13,36 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 def generate_viral_content():
     print("AI is generating a viral script...")
-    # Sahi model name jo Gemini API support karta hai
-    model = genai.GenerativeModel('gemini-3.8-flash')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = (
         "Write a short, highly engaging, viral YouTube Shorts script about an unknown psychological fact "
         "or mysterious AI secret. Keep it under 50 words, fast-paced, with a strong hook in the first 3 seconds. "
         "Also provide a catchy title starting with an emoji. Format: Title: [Title]\nScript: [Script]"
     )
-    response = model.generate_content(prompt)
-    text = response.text
     
-    # Title aur Script ko alag karna
-    lines = text.split('\n')
-    title = "Mind Blowing AI & Psychology Facts 🔥 #Shorts"
-    script = text
-    
-    for line in lines:
-        if line.startswith("Title:"):
-            title = line.replace("Title:", "").strip()
-        elif line.startswith("Script:"):
-            script = line.replace("Script:", "").strip()
+    # Retry loop agar quota limit ki wajah se error aaye
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(prompt)
+            text = response.text
             
-    return title, script
+            title = "Mind Blowing AI & Psychology Facts 🔥 #Shorts"
+            script = text
+            
+            lines = text.split('\n')
+            for line in lines:
+                if line.startswith("Title:"):
+                    title = line.replace("Title:", "").strip()
+                elif line.startswith("Script:"):
+                    script = line.replace("Script:", "").strip()
+                    
+            return title, script
+        except Exception as e:
+            print(f"Rate limit hit or error: {e}. Retrying in 60 seconds (Attempt {attempt+1}/{max_retries})...")
+            time.sleep(60)
+            
+    raise Exception("Failed to generate content after multiple retries due to quota limits.")
 
 def create_voiceover(script):
     print("Converting script to voiceover...")
@@ -47,10 +56,7 @@ def create_video_file(audio_path):
     audio_clip = AudioFileClip(audio_path)
     duration = audio_clip.duration
     
-    # 9:16 vertical video shorts ke liye (Solid background color)
     bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 35), duration=duration)
-    
-    # Audio ko video ke sath sync karna
     video = bg_clip.set_audio(audio_clip)
     
     output_video = "final_video.mp4"
@@ -95,16 +101,10 @@ def upload_to_youtube(video_path, title, description="Automated upload via AI Va
     print(f"Video uploaded successfully! Video ID: {response.get('id')}")
 
 if __name__ == "__main__":
-    # Step 1: AI se title aur script banayein
     title, script = generate_viral_content()
     print(f"Generated Title: {title}")
     print(f"Generated Script: {script}")
     
-    # Step 2: Voiceover generate karein
     audio_file = create_voiceover(script)
-    
-    # Step 3: Video render karein
     video_file = create_video_file(audio_file)
-    
-    # Step 4: YouTube par upload kar dein
     upload_to_youtube(video_file, title=title)
