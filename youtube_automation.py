@@ -3,28 +3,29 @@ import time
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
-import google.generativeai as genai
+from google import genai
 from gtts import gTTS
 from moviepy.editor import AudioFileClip, ColorClip
 
-# 1. Gemini API Configure Karein
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
+# 1. New Google GenAI Client Configure Karein
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 def generate_viral_content():
     print("AI is generating a viral script...")
-    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = (
         "Write a short, highly engaging, viral YouTube Shorts script about an unknown psychological fact "
         "or mysterious AI secret. Keep it under 50 words, fast-paced, with a strong hook in the first 3 seconds. "
         "Also provide a catchy title starting with an emoji. Format: Title: [Title]\nScript: [Script]"
     )
     
-    # Retry loop agar quota limit ki wajah se error aaye
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            response = model.generate_content(prompt)
+            # Naye client ka tareeqa script generate karne ke liye
+            response = client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=prompt,
+            )
             text = response.text
             
             title = "Mind Blowing AI & Psychology Facts 🔥 #Shorts"
@@ -39,10 +40,10 @@ def generate_viral_content():
                     
             return title, script
         except Exception as e:
-            print(f"Rate limit hit or error: {e}. Retrying in 60 seconds (Attempt {attempt+1}/{max_retries})...")
-            time.sleep(60)
+            print(f"Error encountered: {e}. Retrying in 30 seconds (Attempt {attempt+1}/{max_retries})...")
+            time.sleep(30)
             
-    raise Exception("Failed to generate content after multiple retries due to quota limits.")
+    raise Exception("Failed to generate content after multiple retries.")
 
 def create_voiceover(script):
     print("Converting script to voiceover...")
