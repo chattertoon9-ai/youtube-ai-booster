@@ -6,12 +6,13 @@ import google.generativeai as genai
 from gtts import gTTS
 from moviepy.editor import AudioFileClip, ColorClip
 
-# 1. Gemini API Configure Karein (Script Generation ke liye)
+# 1. Gemini API Configure Karein
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
 def generate_viral_content():
     print("AI is generating a viral script...")
+    # Sahi model name jo Gemini API support karta hai
     model = genai.GenerativeModel('gemini-3.8-flash')
     prompt = (
         "Write a short, highly engaging, viral YouTube Shorts script about an unknown psychological fact "
@@ -56,7 +57,7 @@ def create_video_file(audio_path):
     video.write_videofile(output_video, fps=24, codec='libx264', audio_codec='aac')
     return output_video
 
-def upload_to_youtube(video_path, title, description="Automated upload via AI & GitHub Actions"):
+def upload_to_youtube(video_path, title, description="Automated upload via AI Vault & GitHub Actions"):
     print("Uploading video to YouTube...")
     
     creds = Credentials(
@@ -73,7 +74,7 @@ def upload_to_youtube(video_path, title, description="Automated upload via AI & 
         'snippet': {
             'title': title,
             'description': description,
-            'tags': ['shorts', 'viral', 'ai', 'facts'],
+            'tags': ['shorts', 'viral', 'ai', 'facts', 'aivault'],
             'categoryId': '22'
         },
         'status': {
