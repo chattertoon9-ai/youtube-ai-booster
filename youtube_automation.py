@@ -18,10 +18,10 @@ def generate_viral_content():
         "Also provide a catchy title starting with an emoji. Format: Title: [Title]\nScript: [Script]"
     )
     
-    max_retries = 3
+    # Retry limit ko barha kar 5 kar diya hai aur delay 45 seconds kar diya hai
+    max_retries = 5
     for attempt in range(max_retries):
         try:
-            # Gemini 3.8 Flash model use kar rahe hain jo error mein suggest kiya gaya hai
             response = client.models.generate_content(
                 model='gemini-3.8-flash',
                 contents=prompt,
@@ -40,10 +40,10 @@ def generate_viral_content():
                     
             return title, script
         except Exception as e:
-            print(f"Error encountered: {e}. Retrying in 30 seconds (Attempt {attempt+1}/{max_retries})...")
-            time.sleep(30)
+            print(f"Server high demand / error: {e}. Retrying in 45 seconds (Attempt {attempt+1}/{max_retries})...")
+            time.sleep(45)
             
-    raise Exception("Failed to generate content after multiple retries.")
+    raise Exception("Failed to generate content after multiple retries due to high server demand.")
 
 def create_voiceover(script):
     print("Converting script to voiceover...")
