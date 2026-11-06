@@ -1,12 +1,15 @@
-import google.generativeai as genai
 import os
 import time
+import google.generativeai as genai
 
 def generate_viral_content():
     api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise Exception("GEMINI_API_KEY environment variable is missing.")
+    
     genai.configure(api_key=api_key)
     
-    # 1.5 se lekar 3.8 tak ke tamam models ki priority list
+    # Priority list of models to try sequentially if 503 or rate limit occurs
     models_to_try = [
         'gemini-3.8-flash',
         'gemini-2.5-flash',
@@ -15,21 +18,40 @@ def generate_viral_content():
         'gemini-1.5-pro'
     ]
     
-    prompt = "Generate a short viral YouTube Shorts script with a title. Return title and script."
+    prompt = (
+        "Generate a short, viral YouTube Shorts script with an engaging title. "
+        "Format the output strictly as:\nTitle: [Your Title Here]\n\n[Your Script Here]"
+    )
     
     for model_name in models_to_try:
         try:
             print(f"Trying model: {model_name}...")
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
+            
             if response and response.text:
                 print(f"Successfully generated content using {model_name}")
-                content = response.text.split("\n\n")
-                title = content[0].replace("Title:", "").strip()
-                script = "\n".join(content[1:]).strip()
+                text = response.text.strip()
+                
+                # Parsing title and script safely
+                if "Title:" in text:
+                    parts = text.split("\n\n", 1)
+                    title = parts[0].replace("Title:", "").strip()
+                    script = parts[1].strip() if len(parts) > 1 else "Keep pushing forward!"
+                else:
+                    title = "Viral Short #shorts"
+                    script = text
+                    
                 return title, script
+                
         except Exception as e:
             print(f"Model {model_name} failed with error: {e}. Trying next model...")
             time.sleep(2)
             
-    raise Exception("All Gemini models failed due to high demand or rate limits. Please try again later.")
+    raise Exception("All Gemini models failed due to high demand, rate limits, or errors. Please try again later.")
+
+if __name__ == "__main__":
+    print("AI is generating a viral script...")
+    title, script = generate_viral_content()
+    print(f"Generated Title: {title}")
+    print(f"Generated Script Length: {len(script)} characters")
