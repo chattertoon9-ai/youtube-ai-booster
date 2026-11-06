@@ -9,10 +9,10 @@ def generate_viral_content():
     
     genai.configure(api_key=api_key)
     
-    # Stable models supported by google-generativeai package
+    # Stable and active models list
     models_to_try = [
-        'gemini-1.5-flash',
-        'gemini-1.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
         'gemini-3.8-flash'
     ]
     
@@ -27,7 +27,9 @@ def generate_viral_content():
             try:
                 print(f"Trying model: {model_name} (Attempt {attempt+1}/{attempts})...")
                 model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt)
+                
+                # Added timeout to prevent 504 deadline errors
+                response = model.generate_content(prompt, request_options={'timeout': 30})
                 
                 if response and response.text:
                     print(f"Successfully generated content using {model_name}")
@@ -47,12 +49,12 @@ def generate_viral_content():
                 print(f"Model {model_name} failed with error: {e}")
                 if "429" in str(e) or "quota" in str(e).lower():
                     wait_time = 20 * (attempt + 1)
-                    print(f"Rate limit hit. Waiting for {wait_time} seconds before trying next...")
+                    print(f"Rate limit hit. Waiting for {wait_time} seconds...")
                     time.sleep(wait_time)
                 else:
-                    time.sleep(2)
+                    time.sleep(3)
                     
-    raise Exception("All Gemini models failed due to rate limits or availability. Please try again later.")
+    raise Exception("All Gemini models failed due to timeouts or availability. Please try again later.")
 
 if __name__ == "__main__":
     print("AI is generating a viral script...")
