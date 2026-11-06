@@ -1,16 +1,15 @@
 import os
 import time
-from google import genai
+import google.generativeai as genai
 
 def generate_viral_content():
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise Exception("GEMINI_API_KEY environment variable is missing.")
     
-    # Official google-genai client initialization
-    client = genai.Client(api_key=api_key)
+    genai.configure(api_key=api_key)
     
-    # Complete model fallback list from 1.5 up to 3.8
+    # Complete models list from 1.5 up to 3.8
     models_to_try = [
         'gemini-3.8-flash',
         'gemini-2.5-flash',
@@ -29,10 +28,8 @@ def generate_viral_content():
         for attempt in range(attempts):
             try:
                 print(f"Trying model: {model_name} (Attempt {attempt+1}/{attempts})...")
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                )
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt)
                 
                 if response and response.text:
                     print(f"Successfully generated content using {model_name}")
@@ -57,7 +54,7 @@ def generate_viral_content():
                 else:
                     time.sleep(2)
                     
-    raise Exception("All Gemini models (from 1.5 to 3.8) failed due to availability or limits. Please try again later.")
+    raise Exception("All Gemini models failed. Please try again later.")
 
 if __name__ == "__main__":
     print("AI is generating a viral script...")
