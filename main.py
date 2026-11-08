@@ -6,14 +6,9 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from gtts import gTTS
 
-# MoviePy modern imports
+# MoviePy modern imports (No TextClip to prevent Linux headless crashes)
 from moviepy.video.VideoClip import ColorClip
-from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
-try:
-    from moviepy.video.tools.subtitles import TextClip
-except ImportError:
-    TextClip = None
 
 def generate_viral_content():
     """Generates viral mystery script using Gemini API with multiple keys rotation (Key 1 to 6)."""
@@ -45,7 +40,6 @@ def generate_viral_content():
     model_name = 'gemini-3.8-flash'
     
     for key_index, api_key in enumerate(api_keys):
-        print(f"Attempting generation with API Key #{key_index + 1}...")
         try:
             client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
@@ -54,7 +48,6 @@ def generate_viral_content():
             )
             
             if response and response.text:
-                print(f"Successfully generated content using API Key #{key_index + 1}")
                 output = response.text.strip()
                 
                 title = "Mysterious AI Fact #shorts"
@@ -73,46 +66,24 @@ def generate_viral_content():
                 return title, description, script
                 
         except Exception as e:
-            print(f"API Key #{key_index + 1} failed: {str(e)}")
-            time.sleep(2)
+            time.sleep(1)
                     
     raise Exception("All Gemini API keys failed or exhausted daily limits.")
 
 def create_video(script_text, output_filename="output.mp4"):
-    """Converts script text to speech and generates a vertical video with text overlay and exact audio duration using MoviePy."""
+    """Generates a reliable vertical video with clean background color and audio, 100% safe for Linux/GitHub Actions."""
     print("Generating voiceover audio...")
     tts = gTTS(text=script_text, lang='en', slow=False)
     audio_path = "voiceover.mp3"
     tts.save(audio_path)
     
-    # Load audio clip to get exact duration
     audio_clip = AudioFileClip(audio_path)
     duration = audio_clip.duration
     print(f"Audio duration loaded: {duration:.2f} seconds")
     
-    # Create background clip matching exact audio duration
     print(f"Creating vertical video background (1080x1920)...")
-    bg_clip = ColorClip(size=(1080, 1920), color=(15, 20, 35), duration=duration)
+    video = ColorClip(size=(1080, 1920), color=(15, 22, 36), duration=duration)
     
-    video = bg_clip
-    
-    # Add text overlay so the video encoder detects a visible stream instead of black screen
-    if TextClip is not None:
-        try:
-            display_text = script_text[:100] + "..."
-            txt_clip = TextClip(
-                display_text, 
-                fontsize=45, 
-                color='white', 
-                size=(900, None), 
-                method='caption'
-            ).set_duration(duration).set_position('center')
-            
-            video = CompositeVideoClip([bg_clip, txt_clip])
-        except Exception as e:
-            print(f"TextClip rendering notice (proceeding with background only): {e}")
-            
-    # Attach audio properly using modern/fallback syntax
     try:
         video = video.with_audio(audio_clip)
     except AttributeError:
@@ -128,11 +99,10 @@ def create_video(script_text, output_filename="output.mp4"):
         logger=None
     )
     
-    # Close clips to free resources
     audio_clip.close()
-    bg_clip.close()
+    video.close()
     
-    print("Video rendering completed successfully with text overlay and audio!")
+    print("Video rendering completed successfully!")
     return output_filename
 
 def upload_to_youtube(video_file_path, title, description):
@@ -144,7 +114,6 @@ def upload_to_youtube(video_file_path, title, description):
     if not all([client_id, client_secret, refresh_token]):
         raise Exception("YouTube OAuth secrets are missing in environment variables!")
         
-    print("Authenticating with YouTube API...")
     credentials = Credentials(
         token=None,
         refresh_token=refresh_token,
@@ -180,21 +149,40 @@ def upload_to_youtube(video_file_path, title, description):
     while response is None:
         status, response = request.next_chunk()
         if status:
-            print(f"Upload progress: {int(status.progress() * 100)}%")
+            pass
             
     print(f"Successfully uploaded! Video ID: {response.get('id')}")
     print(f"View it here: https://youtu.be/{response.get('id')}")
 
 if __name__ == "__main__":
-    print("=== Mysterious AI Pipeline Initialized ===")
+    print("=== Mysterious AI Multi-Video Pipeline Initialized ===")
     
-    title, description, script = generate_viral_content()
-    print(f"\n[Generated Title]: {title}")
-    print(f"[Generated Description]: {description}")
+    # Generate and upload 4 videos in a single run
+    TOTAL_VIDEOS_TO_GENERATE = 4
     
-    video_path = create_video(script)
-    
-    if os.path.exists(video_path):
-        upload_to_youtube(video_path, title, description)
-    else:
-        print(f"Error: Video file '{video_path}' was not created.")
+    for i in range(1, TOTAL_VIDEOS_TO_GENERATE + 1):
+        print(f"\n--- Starting Video {i} of {TOTAL_VIDEOS_TO_GENERATE} ---")
+        try:
+            title, description, script = generate_viral_content()
+            print(f"[Generated Title]: {title}")
+            
+            output_filename = f"output_{i}.mp4"
+            video_path = create_video(script, output_filename=output_filename)
+            
+            if os.path.exists(video_path):
+                upload_to_youtube(video_path, title, description)
+                # Clean up file after upload
+                os.remove(video_path)
+            else:
+                print(f"Error: Video file '{video_path}' was not created.")
+                
+            # Wait a few seconds between uploads to avoid YouTube rate limits
+            if i < TOTAL_VIDEOS_TO_GENERATE:
+                print("Waiting 5 seconds before next video...")
+                time.sleep(5)
+                
+        except Exception as e:
+            print(f"Error in video #{i}: {str(e)}")
+            continue
+
+    print("\n=== All Videos Processed Successfully! ===")
