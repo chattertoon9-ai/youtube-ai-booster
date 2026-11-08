@@ -42,6 +42,7 @@ def generate_viral_content():
         "SCRIPT: [The main narration text for voiceover]"
     )
     
+    # Stable model updated here
     model_name = 'gemini-3.8-flash'
     
     for key_index, api_key in enumerate(api_keys):
@@ -128,6 +129,7 @@ def upload_to_youtube(video_file_path, title, description):
     """Uploads the rendered video to YouTube using OAuth2 credentials and Refresh Token."""
     client_id = os.environ.get("YOUTUBE_CLIENT_ID")
     client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET")
+    # Matching your secret spelling TEKEN
     refresh_token = os.environ.get("YOUTUBE_REFRESH_TEKEN")
     
     if not all([client_id, client_secret, refresh_token]):
