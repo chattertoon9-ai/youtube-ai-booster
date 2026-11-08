@@ -18,7 +18,6 @@ except ImportError:
 def generate_viral_content():
     """Generates viral mystery script using Gemini API with multiple keys rotation (Key 1 to 6)."""
     
-    # Collect all Gemini keys from environment variables (GEMINI_API_KEY up to GEMINI_API_KEY_6)
     api_keys = []
     for i in range(1, 7):
         key_name = f"GEMINI_API_KEY_{i}" if i > 1 else "GEMINI_API_KEY"
@@ -26,7 +25,6 @@ def generate_viral_content():
         if k.strip():
             api_keys.append(k.strip())
             
-    # Fallback to comma-separated single string if needed
     if not api_keys:
         raw_keys = os.environ.get("GEMINI_API_KEY", "")
         api_keys = [k.strip() for k in raw_keys.split(",") if k.strip()]
@@ -37,10 +35,10 @@ def generate_viral_content():
     prompt = (
         "Create an extremely engaging, high-retention 30-second YouTube Short script about an unsolved mystery, "
         "dark historical secret, or terrifying psychological fact. "
-        "Start with a strong psychological hook in the first 3 seconds to keep viewers from scrolling away.\n\n"
+        "Start with a strong psychological hook in the first 3 seconds.\n\n"
         "Format your output strictly as follows:\n"
         "TITLE: [Catchy viral title with emojis #shorts]\n"
-        "DESCRIPTION: [Engaging description with top 5 viral hashtags like #shorts #mystery #facts #scary #viral]\n"
+        "DESCRIPTION: [Engaging description with #shorts #mystery #facts]\n"
         "SCRIPT: [The main narration text for voiceover]"
     )
     
@@ -87,17 +85,14 @@ def create_video(script_text, output_filename="output.mp4"):
     audio_path = "voiceover.mp3"
     tts.save(audio_path)
     
-    # Load audio to get duration
     audio_clip = AudioFileClip(audio_path)
     duration = audio_clip.duration
     
     print(f"Creating vertical video (Duration: {duration:.2f}s)...")
-    # Create a dark background for mysterious look (1080x1920 vertical format for Shorts)
     bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 20), duration=duration)
     
     video = bg_clip
     
-    # Add text overlay if TextClip is available and working
     if TextClip is not None:
         try:
             txt_clip = TextClip(
@@ -112,7 +107,6 @@ def create_video(script_text, output_filename="output.mp4"):
         except Exception as e:
             print(f"TextClip warning (proceeding with background only): {e}")
             
-    # Attach audio using with_audio or set_audio fallback
     try:
         video = video.with_audio(audio_clip)
     except AttributeError:
@@ -183,15 +177,12 @@ def upload_to_youtube(video_file_path, title, description):
 if __name__ == "__main__":
     print("=== Mysterious AI Pipeline Initialized ===")
     
-    # 1. Generate Title, Description & Script via Gemini
     title, description, script = generate_viral_content()
     print(f"\n[Generated Title]: {title}")
     print(f"[Generated Description]: {description}")
     
-    # 2. Render Video (Audio + Visuals)
     video_path = create_video(script)
     
-    # 3. Upload to YouTube
     if os.path.exists(video_path):
         upload_to_youtube(video_path, title, description)
     else:
