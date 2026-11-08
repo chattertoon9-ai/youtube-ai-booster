@@ -11,21 +11,28 @@ from moviepy.video.VideoClip import ColorClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 def generate_viral_content():
-    """Generates viral mystery script using Gemini API with multiple keys rotation (Key 1 to 6)."""
+    """Generates viral mystery script using Gemini API with robust key checking."""
     
+    # Collect all available API keys from environment
     api_keys = []
-    for i in range(1, 7):
-        key_name = f"GEMINI_API_KEY_{i}" if i > 1 else "GEMINI_API_KEY"
-        k = os.environ.get(key_name, "")
-        if k.strip():
-            api_keys.append(k.strip())
+    
+    # Check primary key
+    primary_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if primary_key:
+        api_keys.append(primary_key)
+        
+    # Check numbered keys 2 to 6
+    for i in range(2, 7):
+        k = os.environ.get(f"GEMINI_API_KEY_{i}", "").strip()
+        if k:
+            api_keys.append(k)
             
-    if not api_keys:
-        raw_keys = os.environ.get("GEMINI_API_KEY", "")
-        api_keys = [k.strip() for k in raw_keys.split(",") if k.strip()]
+    # If comma-separated keys were put in GEMINI_API_KEY
+    if len(api_keys) == 1 and "," in api_keys[0]:
+        api_keys = [k.strip() for k in api_keys[0].split(",") if k.strip()]
         
     if not api_keys:
-        raise Exception("No Gemini API keys found in environment variables!")
+        raise Exception("No Gemini API keys found in GitHub Secrets! Please add GEMINI_API_KEY.")
     
     prompt = (
         "Create an extremely engaging, high-retention 30-second YouTube Short script about an unsolved mystery, "
@@ -39,8 +46,10 @@ def generate_viral_content():
     
     model_name = 'gemini-3.8-flash'
     
-    for key_index, api_key in enumerate(api_keys):
+    last_exception = None
+    for idx, api_key in enumerate(api_keys):
         try:
+            print(f"Trying Gemini API Key index {idx+1}...")
             client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
                 model=model_name,
@@ -77,9 +86,11 @@ def generate_viral_content():
                 return title, description, script
                 
         except Exception as e:
+            last_exception = e
+            print(f"Key index {idx+1} failed: {str(e)}")
             time.sleep(1)
                     
-    raise Exception("All Gemini API keys failed or exhausted daily limits.")
+    raise Exception(f"All Gemini API keys failed. Last error: {str(last_exception)}")
 
 def create_video(script_text, output_filename="output.mp4"):
     """Generates a reliable vertical video stream compatible with modern MoviePy and ffmpeg yuv420p formatting."""
