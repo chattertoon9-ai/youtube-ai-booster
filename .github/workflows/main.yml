@@ -33,6 +33,6 @@ jobs:
           GEMINI_API_KEY_6: ${{ secrets.GEMINI_API_KEY_6 }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TEKEN }}
+          YOUTUBE_REFRESH_TEKEN: ${{ secrets.YOUTUBE_REFRESH_TEKEN }}
         run: |
           python main.py
