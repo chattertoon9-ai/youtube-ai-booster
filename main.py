@@ -11,28 +11,21 @@ from moviepy.video.VideoClip import ColorClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 def generate_viral_content():
-    """Generates viral mystery script using Gemini API with robust key checking."""
+    """Generates viral mystery script using Gemini API with fallback backup script."""
     
-    # Collect all available API keys from environment
     api_keys = []
-    
-    # Check primary key
     primary_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if primary_key:
         api_keys.append(primary_key)
         
-    # Check numbered keys 2 to 6
     for i in range(2, 7):
         k = os.environ.get(f"GEMINI_API_KEY_{i}", "").strip()
         if k:
             api_keys.append(k)
             
-    # If comma-separated keys were put in GEMINI_API_KEY
-    if len(api_keys) == 1 and "," in api_keys[0]:
-        api_keys = [k.strip() for k in api_keys[0].split(",") if k.strip()]
-        
     if not api_keys:
-        raise Exception("No Gemini API keys found in GitHub Secrets! Please add GEMINI_API_KEY.")
+        print("Warning: No Gemini API keys found. Using built-in fallback script.")
+        return get_fallback_script()
     
     prompt = (
         "Create an extremely engaging, high-retention 30-second YouTube Short script about an unsolved mystery, "
@@ -44,9 +37,9 @@ def generate_viral_content():
         "SCRIPT: [The main narration text for voiceover]"
     )
     
-    model_name = 'gemini-3.8-flash'
+    # Using reliable and fast flash model
+    model_name = 'gemini-2.5-flash'
     
-    last_exception = None
     for idx, api_key in enumerate(api_keys):
         try:
             print(f"Trying Gemini API Key index {idx+1}...")
@@ -86,11 +79,23 @@ def generate_viral_content():
                 return title, description, script
                 
         except Exception as e:
-            last_exception = e
-            print(f"Key index {idx+1} failed: {str(e)}")
+            print(f"Key index {idx+1} failed quota or limit: {str(e)}")
             time.sleep(1)
                     
-    raise Exception(f"All Gemini API keys failed. Last error: {str(last_exception)}")
+    print("All Gemini API keys exhausted. Using emergency fallback script so video production continues!")
+    return get_fallback_script()
+
+def get_fallback_script():
+    """Provides a pre-written viral mystery script if API quota is exhausted."""
+    title = "The Terrifying Glitch in Human Memory 🧠⚠️ #shorts"
+    description = "Have you ever experienced the Mandela effect? Here is the terrifying truth about your brain. #shorts #mystery #facts"
+    script = (
+        "Did you know your brain is actively rewriting your memories every single day? "
+        "Scientists discovered that every time you recall a memory, you aren't remembering the original event—you are remembering the last time you thought about it. "
+        "This means a huge portion of what you believe happened in your past... never actually occurred the way you remember it. "
+        "What else is your mind hiding from you? Subscribe for more dark psychological facts."
+    )
+    return title, description, script
 
 def create_video(script_text, output_filename="output.mp4"):
     """Generates a reliable vertical video stream compatible with modern MoviePy and ffmpeg yuv420p formatting."""
