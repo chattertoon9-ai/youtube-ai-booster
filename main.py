@@ -8,6 +8,7 @@ from gtts import gTTS
 
 # MoviePy modern imports
 from moviepy.video.VideoClip import ColorClip
+from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 def generate_viral_content():
@@ -72,7 +73,7 @@ def generate_viral_content():
                 if script_lines and "".join(script_lines).strip():
                     script = " ".join(script_lines)
                 elif not script or len(script) < 10:
-                    script = output # Fallback to full text if parsing fails
+                    script = output
                     
                 return title, description, script
                 
@@ -82,7 +83,7 @@ def generate_viral_content():
     raise Exception("All Gemini API keys failed or exhausted daily limits.")
 
 def create_video(script_text, output_filename="output.mp4"):
-    """Generates a reliable vertical video with proper ffmpeg yuv420p parameters so YouTube displays the background correctly."""
+    """Generates a dynamic vertical video stream with layered visual elements so YouTube displays the background correctly."""
     print("Generating voiceover audio...")
     if not script_text or not script_text.strip():
         raise Exception("No text to speak provided for video generation!")
@@ -96,12 +97,17 @@ def create_video(script_text, output_filename="output.mp4"):
     print(f"Audio duration loaded: {duration:.2f} seconds")
     
     print(f"Creating vertical video background (1080x1920)...")
-    bg_clip = ColorClip(size=(1080, 1920), color=(25, 35, 55), duration=duration)
+    bg_clip = ColorClip(size=(1080, 1920), color=(20, 30, 50), duration=duration)
+    
+    # Adding a center card layer to ensure YouTube recognizes it as a valid visual video stream
+    center_card = ColorClip(size=(900, 400), color=(35, 50, 80), duration=duration).set_position('center')
+    
+    video = CompositeVideoClip([bg_clip, center_card])
     
     try:
-        video = bg_clip.with_audio(audio_clip)
+        video = video.with_audio(audio_clip)
     except AttributeError:
-        video = bg_clip.set_audio(audio_clip)
+        video = video.set_audio(audio_clip)
     
     print(f"Rendering final video file with ffmpeg yuv420p params: {output_filename}...")
     video.write_videofile(
@@ -110,15 +116,16 @@ def create_video(script_text, output_filename="output.mp4"):
         codec='libx264', 
         audio_codec='aac',
         preset='ultrafast',
-        ffmpeg_params=['-pix_fmt', 'yuv420p'],  # Correct way to pass pix_fmt in MoviePy
+        ffmpeg_params=['-pix_fmt', 'yuv420p'],
         logger=None
     )
     
     audio_clip.close()
     video.close()
     bg_clip.close()
+    center_card.close()
     
-    print("Video rendering completed successfully!")
+    print("Video rendering completed successfully with visual layers!")
     return output_filename
 
 def upload_to_youtube(video_file_path, title, description):
@@ -191,8 +198,8 @@ if __name__ == "__main__":
                 print(f"Error: Video file '{video_path}' was not created.")
                 
             if i < TOTAL_VIDEOS_TO_GENERATE:
-                print("Waiting 5 seconds before next video...")
-                time.sleep(5)
+                print("Waiting 10 seconds before next video...")
+                time.sleep(10)
                 
         except Exception as e:
             print(f"Error in video #{i}: {str(e)}")
