@@ -37,8 +37,8 @@ def generate_viral_content():
         "SCRIPT: [The main narration text for voiceover]"
     )
     
-    # Using reliable and fast flash model
-    model_name = 'gemini-2.5-flash'
+    # Updated to the current standard flash model as recommended by the API
+    model_name = 'gemini-3.8-flash'
     
     for idx, api_key in enumerate(api_keys):
         try:
@@ -79,14 +79,14 @@ def generate_viral_content():
                 return title, description, script
                 
         except Exception as e:
-            print(f"Key index {idx+1} failed quota or limit: {str(e)}")
+            print(f"Key index {idx+1} failed: {str(e)}")
             time.sleep(1)
                     
-    print("All Gemini API keys exhausted. Using emergency fallback script so video production continues!")
+    print("All Gemini API keys exhausted or unavailable. Using emergency fallback script so video production continues!")
     return get_fallback_script()
 
 def get_fallback_script():
-    """Provides a pre-written viral mystery script if API quota is exhausted."""
+    """Provides a pre-written viral mystery script if API quota or model access fails."""
     title = "The Terrifying Glitch in Human Memory 🧠⚠️ #shorts"
     description = "Have you ever experienced the Mandela effect? Here is the terrifying truth about your brain. #shorts #mystery #facts"
     script = (
