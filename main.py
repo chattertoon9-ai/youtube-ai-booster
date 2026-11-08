@@ -82,7 +82,7 @@ def generate_viral_content():
     raise Exception("All Gemini API keys failed or exhausted daily limits.")
 
 def create_video(script_text, output_filename="output.mp4"):
-    """Generates a reliable vertical video with proper YUV color formatting so YouTube displays the background correctly."""
+    """Generates a reliable vertical video with proper ffmpeg yuv420p parameters so YouTube displays the background correctly."""
     print("Generating voiceover audio...")
     if not script_text or not script_text.strip():
         raise Exception("No text to speak provided for video generation!")
@@ -103,14 +103,14 @@ def create_video(script_text, output_filename="output.mp4"):
     except AttributeError:
         video = bg_clip.set_audio(audio_clip)
     
-    print(f"Rendering final video file with yuv420p encoding: {output_filename}...")
+    print(f"Rendering final video file with ffmpeg yuv420p params: {output_filename}...")
     video.write_videofile(
         output_filename, 
         fps=24, 
         codec='libx264', 
         audio_codec='aac',
         preset='ultrafast',
-        pix_fmt='yuv420p',  # Required for YouTube and mobile players to show background color
+        ffmpeg_params=['-pix_fmt', 'yuv420p'],  # Correct way to pass pix_fmt in MoviePy
         logger=None
     )
     
