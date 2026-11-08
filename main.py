@@ -42,7 +42,7 @@ def generate_viral_content():
         "SCRIPT: [The main narration text for voiceover]"
     )
     
-    model_name = 'gemini-1.5-flash'
+    model_name = 'gemini-3.8-flash'
     
     for key_index, api_key in enumerate(api_keys):
         print(f"Attempting generation with API Key #{key_index + 1}...")
