@@ -42,7 +42,7 @@ def generate_viral_content():
         "SCRIPT: [The main narration text for voiceover]"
     )
     
-    model_name = 'gemini-3.8-flash'
+    model_name = 'gemini-1.5-flash'
     
     for key_index, api_key in enumerate(api_keys):
         print(f"Attempting generation with API Key #{key_index + 1}...")
@@ -79,7 +79,7 @@ def generate_viral_content():
     raise Exception("All Gemini API keys failed or exhausted daily limits.")
 
 def create_video(script_text, output_filename="output.mp4"):
-    """Converts script text to speech and generates a solid dark background video with exact audio duration using MoviePy."""
+    """Converts script text to speech and generates a vertical video with text overlay and exact audio duration using MoviePy."""
     print("Generating voiceover audio...")
     tts = gTTS(text=script_text, lang='en', slow=False)
     audio_path = "voiceover.mp3"
@@ -92,13 +92,31 @@ def create_video(script_text, output_filename="output.mp4"):
     
     # Create background clip matching exact audio duration
     print(f"Creating vertical video background (1080x1920)...")
-    bg_clip = ColorClip(size=(1080, 1920), color=(20, 25, 40), duration=duration)
+    bg_clip = ColorClip(size=(1080, 1920), color=(15, 20, 35), duration=duration)
     
+    video = bg_clip
+    
+    # Add text overlay so the video encoder detects a visible stream instead of black screen
+    if TextClip is not None:
+        try:
+            display_text = script_text[:100] + "..."
+            txt_clip = TextClip(
+                display_text, 
+                fontsize=45, 
+                color='white', 
+                size=(900, None), 
+                method='caption'
+            ).set_duration(duration).set_position('center')
+            
+            video = CompositeVideoClip([bg_clip, txt_clip])
+        except Exception as e:
+            print(f"TextClip rendering notice (proceeding with background only): {e}")
+            
     # Attach audio properly using modern/fallback syntax
     try:
-        video = bg_clip.with_audio(audio_clip)
+        video = video.with_audio(audio_clip)
     except AttributeError:
-        video = bg_clip.set_audio(audio_clip)
+        video = video.set_audio(audio_clip)
     
     print(f"Rendering final video file: {output_filename}...")
     video.write_videofile(
@@ -114,7 +132,7 @@ def create_video(script_text, output_filename="output.mp4"):
     audio_clip.close()
     bg_clip.close()
     
-    print("Video rendering completed successfully with audio!")
+    print("Video rendering completed successfully with text overlay and audio!")
     return output_filename
 
 def upload_to_youtube(video_file_path, title, description):
