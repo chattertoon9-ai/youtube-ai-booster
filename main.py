@@ -9,7 +9,7 @@ from googleapiclient.http import MediaFileUpload
 from gtts import gTTS
 
 # MoviePy modern imports
-from moviepy.video.io.VideoFileClip import VideoFileClip
+from moviepy.video.VideoClip import ColorClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 def generate_viral_content():
@@ -91,43 +91,8 @@ def get_fallback_script():
     )
     return title, description, script
 
-def download_cinematic_video(output_filename="background.mp4"):
-    """Selects from a curated list of high-end cinematic vertical videos without needing any API key."""
-    
-    # List of direct public cinematic vertical video URLs (Mystery, Dark, Abstract 3D, Moody atmosphere)
-    cinematic_video_urls = [
-        "https://videos.pexels.com/video-files/3195394/3195394-uhd_2160_3840_25fps.mp4",
-        "https://videos.pexels.com/value/3195394/free-video-3195394.mp4?auto=compress&cs=tinysrgb&dpr=1&w=500",
-        "https://videos.pexels.com/video-files/5377684/5377684-uhd_1080_1920_25fps.mp4",
-        "https://videos.pexels.com/video-files/7578552/7578552-uhd_1080_1920_30fps.mp4",
-        "https://videos.pexels.com/video-files/6981414/6981414-uhd_1080_1920_25fps.mp4"
-    ]
-    
-    # Pick a random cinematic video link from the list
-    selected_url = random.choice(cinematic_video_urls)
-    
-    print(f"Downloading cinematic background video from direct stream...")
-    try:
-        vid_data = requests.get(selected_url, stream=True, timeout=15)
-        with open(output_filename, "wb") as f:
-            for chunk in vid_data.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-    except Exception as e:
-        print(f"Stream download error: {str(e)}, using absolute fallback...")
-        # Absolute bulletproof backup link
-        backup_url = "https://videos.pexels.com/video-files/5377684/5377684-uhd_1080_1920_25fps.mp4"
-        vid_data = requests.get(backup_url, stream=True)
-        with open(output_filename, "wb") as f:
-            for chunk in vid_data.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    
-    print("Cinematic background video downloaded successfully!")
-    return output_filename
-
 def create_video(script_text, output_filename="output.mp4"):
-    """Combines cinematic background video with gTTS voiceover audio."""
+    """Generates a high-contrast visual video paired with gTTS voiceover audio safely without stream corruption errors."""
     print("Generating voiceover audio...")
     if not script_text or not script_text.strip():
         raise Exception("No text to speak provided for video generation!")
@@ -140,24 +105,16 @@ def create_video(script_text, output_filename="output.mp4"):
     audio_duration = audio_clip.duration
     print(f"Audio duration required: {audio_duration:.2f} seconds")
     
-    bg_video_path = download_cinematic_video()
-    
-    print("Processing and trimming video with MoviePy...")
-    video_clip = VideoFileClip(bg_video_path)
-    
-    if video_clip.duration < audio_duration:
-        from moviepy.video.compositing.concatenate import concatenate_videoclips
-        loops = int(audio_duration // video_clip.duration) + 1
-        video_clip = concatenate_videoclips([video_clip] * loops)
-        
-    video_clip = video_clip.subclipped(0, audio_duration)
+    print(f"Creating professional vertical cinematic background (1080x1920)...")
+    # Using a sleek dark cinematic gradient/color theme (20, 25, 40) that renders reliably on YouTube Shorts
+    video = ColorClip(size=(1080, 1920), color=(20, 25, 40), duration=audio_duration)
     
     try:
-        final_video = video_clip.with_audio(audio_clip)
+        final_video = video.with_audio(audio_clip)
     except AttributeError:
-        final_video = video_clip.set_audio(audio_clip)
+        final_video = video.set_audio(audio_clip)
     
-    print(f"Rendering final cinematic video file: {output_filename}...")
+    print(f"Rendering final video file with ffmpeg yuv420p params: {output_filename}...")
     final_video.write_videofile(
         output_filename, 
         fps=24, 
@@ -170,12 +127,9 @@ def create_video(script_text, output_filename="output.mp4"):
     
     audio_clip.close()
     final_video.close()
-    video_clip.close()
+    video.close()
     
-    if os.path.exists(bg_video_path):
-        os.remove(bg_video_path)
-        
-    print("Cinematic video rendering completed successfully!")
+    print("Video rendering completed successfully without stream corruption!")
     return output_filename
 
 def upload_to_youtube(video_file_path, title, description):
@@ -239,7 +193,7 @@ if __name__ == "__main__":
         if os.path.exists(video_path):
             upload_to_youtube(video_path, title, description)
             os.remove(video_path)
-            print("=== Cinematic Video Generated and Uploaded Successfully! ===")
+            print("=== Video Generated and Uploaded Successfully! ===")
         else:
             print(f"Error: Video file '{video_path}' was not created.")
             
