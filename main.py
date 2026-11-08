@@ -128,7 +128,7 @@ def upload_to_youtube(video_file_path, title, description):
     """Uploads the rendered video to YouTube using OAuth2 credentials and Refresh Token."""
     client_id = os.environ.get("YOUTUBE_CLIENT_ID")
     client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET")
-    refresh_token = os.environ.get("YOUTUBE_REFRESH_TOKEN")
+    refresh_token = os.environ.get("YOUTUBE_REFRESH_TEKEN")
     
     if not all([client_id, client_secret, refresh_token]):
         raise Exception("YouTube OAuth secrets are missing in environment variables!")
