@@ -170,32 +170,20 @@ def upload_to_youtube(video_file_path, title, description):
     print(f"View it here: https://youtu.be/{response.get('id')}")
 
 if __name__ == "__main__":
-    print("=== Mysterious AI Multi-Video Pipeline Initialized ===")
+    print("=== Mysterious AI Single-Video Pipeline Initialized ===")
     
-    # Reduced batch size to 2 to safely respect YouTube daily upload thresholds for newer accounts
-    TOTAL_VIDEOS_TO_GENERATE = 2
-    
-    for i in range(1, TOTAL_VIDEOS_TO_GENERATE + 1):
-        print(f"\n--- Starting Video {i} of {TOTAL_VIDEOS_TO_GENERATE} ---")
-        try:
-            title, description, script = generate_viral_content()
-            print(f"[Generated Title]: {title}")
+    try:
+        title, description, script = generate_viral_content()
+        print(f"[Generated Title]: {title}")
+        
+        video_path = create_video(script, output_filename="output.mp4")
+        
+        if os.path.exists(video_path):
+            upload_to_youtube(video_path, title, description)
+            os.remove(video_path)
+            print("=== Video Generated and Uploaded Successfully! ===")
+        else:
+            print(f"Error: Video file '{video_path}' was not created.")
             
-            output_filename = f"output_{i}.mp4"
-            video_path = create_video(script, output_filename=output_filename)
-            
-            if os.path.exists(video_path):
-                upload_to_youtube(video_path, title, description)
-                os.remove(video_path)
-            else:
-                print(f"Error: Video file '{video_path}' was not created.")
-                
-            if i < TOTAL_VIDEOS_TO_GENERATE:
-                print("Waiting 15 seconds before next video...")
-                time.sleep(15)
-                
-        except Exception as e:
-            print(f"Error in video #{i}: {str(e)}")
-            continue
-
-    print("\n=== All Videos Processed Successfully! ===")
+    except Exception as e:
+        print(f"Pipeline Error: {str(e)}")
