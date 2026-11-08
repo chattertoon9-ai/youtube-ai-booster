@@ -4,6 +4,8 @@ from google import genai
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from gtts import gTTS
+from moviepy.editor import TextClip, CompositeVideoClip, AudioFileClip, ColorClip
 
 def generate_viral_content():
     """Generates viral mystery script, title, and description using Gemini API with key rotation."""
@@ -59,6 +61,50 @@ def generate_viral_content():
                     
     raise Exception("All API keys failed or exhausted daily limits.")
 
+def create_video(script_text, output_filename="output.mp4"):
+    """Converts script text to speech and generates a dark vertical background video using MoviePy."""
+    print("Generating voiceover audio...")
+    tts = gTTS(text=script_text, lang='en', slow=False)
+    audio_path = "voiceover.mp3"
+    tts.save(audio_path)
+    
+    # Load audio to get duration
+    audio_clip = AudioFileClip(audio_path)
+    duration = audio_clip.duration
+    
+    print(f"Creating vertical video (Duration: {duration:.2f}s)...")
+    # Create a dark background for mysterious look (1080x1920 vertical format for Shorts)
+    bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 20), duration=duration)
+    
+    # Add text overlay (Showing snippet of the script or title)
+    try:
+        txt_clip = TextClip(
+            script_text[:120] + "...", 
+            fontsize=50, 
+            color='white', 
+            size=(900, None), 
+            method='caption'
+        ).set_duration(duration).set_position('center')
+        
+        video = CompositeVideoClip([bg_clip, txt_clip])
+    except Exception as e:
+        print(f"TextClip error (falling back to background only): {e}")
+        video = bg_clip
+        
+    video = video.set_audio(audio_clip)
+    
+    print(f"Rendering video file: {output_filename}...")
+    video.write_videofile(
+        output_filename, 
+        fps=24, 
+        codec='libx264', 
+        audio_codec='aac',
+        preset='ultrafast',
+        logger=None
+    )
+    print("Video rendering completed successfully!")
+    return output_filename
+
 def upload_to_youtube(video_file_path, title, description):
     """Uploads the rendered video to YouTube using OAuth2 credentials and Refresh Token."""
     client_id = os.environ.get("YOUTUBE_CLIENT_ID")
@@ -81,18 +127,18 @@ def upload_to_youtube(video_file_path, title, description):
     
     body = {
         "snippet": {
-            "title": title[:100],  # YouTube allows max 100 characters for title
+            "title": title[:100],
             "description": description,
             "tags": ["shorts", "mystery", "facts", "ai", "mysteriousai"],
-            "categoryId": "24"  # Entertainment category
+            "categoryId": "24"
         },
         "status": {
-            "privacyStatus": "public",  # Set to 'private' if you want to test first
+            "privacyStatus": "public",  # Aap chahein toh 'private' bhi rakh sakte hain testing ke liye
             "selfDeclaredMadeForKids": False
         }
     }
     
-    print(f"Uploading video file: {video_file_path}...")
+    print(f"Uploading video file to YouTube: {video_file_path}...")
     media = MediaFileUpload(video_file_path, chunksize=-1, resumable=True)
     request = youtube.videos().insert(
         part="snippet,status",
@@ -117,9 +163,11 @@ if __name__ == "__main__":
     print(f"\n[Generated Title]: {title}")
     print(f"[Generated Description]: {description}")
     
-    # 2. Upload Phase (Aap yahan apni generated ya test video file ka path denge)
-    # video_path = "output.mp4"
-    # if os.path.exists(video_path):
-    #     upload_to_youtube(video_path, title, description)
-    # else:
-    #     print(f"Warning: Video file '{video_path}' not found. Skipping upload step for now.")
+    # 2. Render Video (Audio + Visuals)
+    video_path = create_video(script)
+    
+    # 3. Upload to YouTube
+    if os.path.exists(video_path):
+        upload_to_youtube(video_path, title, description)
+    else:
+        print(f"Error: Video file '{video_path}' was not created.")
