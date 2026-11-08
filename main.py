@@ -5,7 +5,15 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from gtts import gTTS
-from moviepy.editor import TextClip, CompositeVideoClip, AudioFileClip, ColorClip
+
+# MoviePy modern imports
+from moviepy.video.VideoClip import ColorClip
+from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
+from moviepy.audio.io.AudioFileClip import AudioFileClip
+try:
+    from moviepy.video.tools.subtitles import TextClip
+except ImportError:
+    TextClip = None
 
 def generate_viral_content():
     """Generates viral mystery script, title, and description using Gemini API with key rotation."""
@@ -76,21 +84,23 @@ def create_video(script_text, output_filename="output.mp4"):
     # Create a dark background for mysterious look (1080x1920 vertical format for Shorts)
     bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 20), duration=duration)
     
-    # Add text overlay (Showing snippet of the script or title)
-    try:
-        txt_clip = TextClip(
-            script_text[:120] + "...", 
-            fontsize=50, 
-            color='white', 
-            size=(900, None), 
-            method='caption'
-        ).set_duration(duration).set_position('center')
-        
-        video = CompositeVideoClip([bg_clip, txt_clip])
-    except Exception as e:
-        print(f"TextClip error (falling back to background only): {e}")
-        video = bg_clip
-        
+    video = bg_clip
+    
+    # Add text overlay if TextClip is available and working
+    if TextClip is not None:
+        try:
+            txt_clip = TextClip(
+                script_text[:120] + "...", 
+                fontsize=50, 
+                color='white', 
+                size=(900, None), 
+                method='caption'
+            ).set_duration(duration).set_position('center')
+            
+            video = CompositeVideoClip([bg_clip, txt_clip])
+        except Exception as e:
+            print(f"TextClip warning (proceeding with background only): {e}")
+            
     video = video.set_audio(audio_clip)
     
     print(f"Rendering video file: {output_filename}...")
@@ -133,7 +143,7 @@ def upload_to_youtube(video_file_path, title, description):
             "categoryId": "24"
         },
         "status": {
-            "privacyStatus": "public",  # Aap chahein toh 'private' bhi rakh sakte hain testing ke liye
+            "privacyStatus": "public",
             "selfDeclaredMadeForKids": False
         }
     }
