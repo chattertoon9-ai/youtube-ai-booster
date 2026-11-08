@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from gtts import gTTS
 
-# MoviePy modern imports (No TextClip to prevent Linux headless crashes)
+# MoviePy modern imports
 from moviepy.video.VideoClip import ColorClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 
@@ -55,14 +55,25 @@ def generate_viral_content():
                 script = output
                 
                 lines = output.split('\n')
+                script_lines = []
+                capture_script = False
+                
                 for line in lines:
                     if line.startswith("TITLE:"):
                         title = line.replace("TITLE:", "").strip()
                     elif line.startswith("DESCRIPTION:"):
                         description = line.replace("DESCRIPTION:", "").strip()
                     elif line.startswith("SCRIPT:"):
-                        script = line.replace("SCRIPT:", "").strip()
-                        
+                        capture_script = True
+                        script_lines.append(line.replace("SCRIPT:", "").strip())
+                    elif capture_script:
+                        script_lines.append(line.strip())
+                
+                if script_lines and "".join(script_lines).strip():
+                    script = " ".join(script_lines)
+                elif not script or len(script) < 10:
+                    script = output # Fallback to full text if parsing fails
+                    
                 return title, description, script
                 
         except Exception as e:
@@ -71,8 +82,11 @@ def generate_viral_content():
     raise Exception("All Gemini API keys failed or exhausted daily limits.")
 
 def create_video(script_text, output_filename="output.mp4"):
-    """Generates a reliable vertical video with clean background color and audio, 100% safe for Linux/GitHub Actions."""
+    """Generates a reliable vertical video with clean background color and audio, 100% safe for Linux/YouTube."""
     print("Generating voiceover audio...")
+    if not script_text or not script_text.strip():
+        raise Exception("No text to speak provided for video generation!")
+        
     tts = gTTS(text=script_text, lang='en', slow=False)
     audio_path = "voiceover.mp3"
     tts.save(audio_path)
@@ -82,12 +96,13 @@ def create_video(script_text, output_filename="output.mp4"):
     print(f"Audio duration loaded: {duration:.2f} seconds")
     
     print(f"Creating vertical video background (1080x1920)...")
-    video = ColorClip(size=(1080, 1920), color=(15, 22, 36), duration=duration)
+    # Using a slightly lighter dark-blue tone so it's clearly visible as a video stream
+    bg_clip = ColorClip(size=(1080, 1920), color=(25, 35, 55), duration=duration)
     
     try:
-        video = video.with_audio(audio_clip)
+        video = bg_clip.with_audio(audio_clip)
     except AttributeError:
-        video = video.set_audio(audio_clip)
+        video = bg_clip.set_audio(audio_clip)
     
     print(f"Rendering final video file: {output_filename}...")
     video.write_videofile(
@@ -101,6 +116,7 @@ def create_video(script_text, output_filename="output.mp4"):
     
     audio_clip.close()
     video.close()
+    bg_clip.close()
     
     print("Video rendering completed successfully!")
     return output_filename
@@ -157,7 +173,6 @@ def upload_to_youtube(video_file_path, title, description):
 if __name__ == "__main__":
     print("=== Mysterious AI Multi-Video Pipeline Initialized ===")
     
-    # Generate and upload 4 videos in a single run
     TOTAL_VIDEOS_TO_GENERATE = 4
     
     for i in range(1, TOTAL_VIDEOS_TO_GENERATE + 1):
@@ -171,12 +186,10 @@ if __name__ == "__main__":
             
             if os.path.exists(video_path):
                 upload_to_youtube(video_path, title, description)
-                # Clean up file after upload
                 os.remove(video_path)
             else:
                 print(f"Error: Video file '{video_path}' was not created.")
                 
-            # Wait a few seconds between uploads to avoid YouTube rate limits
             if i < TOTAL_VIDEOS_TO_GENERATE:
                 print("Waiting 5 seconds before next video...")
                 time.sleep(5)
