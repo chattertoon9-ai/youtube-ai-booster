@@ -8,7 +8,6 @@ from gtts import gTTS
 
 # MoviePy modern imports
 from moviepy.video.VideoClip import ColorClip
-from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 def generate_viral_content():
@@ -38,6 +37,7 @@ def generate_viral_content():
         "SCRIPT: [The main narration text for voiceover]"
     )
     
+    # Using the stable, high-performance flash model identifier for google-genai
     model_name = 'gemini-3.8-flash'
     
     for key_index, api_key in enumerate(api_keys):
@@ -83,7 +83,7 @@ def generate_viral_content():
     raise Exception("All Gemini API keys failed or exhausted daily limits.")
 
 def create_video(script_text, output_filename="output.mp4"):
-    """Generates a dynamic vertical video stream with layered visual elements so YouTube displays the background correctly."""
+    """Generates a reliable vertical video stream compatible with modern MoviePy and ffmpeg yuv420p formatting."""
     print("Generating voiceover audio...")
     if not script_text or not script_text.strip():
         raise Exception("No text to speak provided for video generation!")
@@ -97,12 +97,7 @@ def create_video(script_text, output_filename="output.mp4"):
     print(f"Audio duration loaded: {duration:.2f} seconds")
     
     print(f"Creating vertical video background (1080x1920)...")
-    bg_clip = ColorClip(size=(1080, 1920), color=(20, 30, 50), duration=duration)
-    
-    # Adding a center card layer to ensure YouTube recognizes it as a valid visual video stream
-    center_card = ColorClip(size=(900, 400), color=(35, 50, 80), duration=duration).set_position('center')
-    
-    video = CompositeVideoClip([bg_clip, center_card])
+    video = ColorClip(size=(1080, 1920), color=(25, 35, 55), duration=duration)
     
     try:
         video = video.with_audio(audio_clip)
@@ -122,10 +117,8 @@ def create_video(script_text, output_filename="output.mp4"):
     
     audio_clip.close()
     video.close()
-    bg_clip.close()
-    center_card.close()
     
-    print("Video rendering completed successfully with visual layers!")
+    print("Video rendering completed successfully!")
     return output_filename
 
 def upload_to_youtube(video_file_path, title, description):
