@@ -1,5 +1,6 @@
 import os
 import time
+import requests
 from google import genai
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -7,12 +8,11 @@ from googleapiclient.http import MediaFileUpload
 from gtts import gTTS
 
 # MoviePy modern imports
-from moviepy.video.VideoClip import ColorClip
+from moviepy.video.io.VideoFileClip import VideoFileClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 def generate_viral_content():
     """Generates viral mystery script using Gemini API with fallback backup script."""
-    
     api_keys = []
     primary_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if primary_key:
@@ -24,7 +24,6 @@ def generate_viral_content():
             api_keys.append(k)
             
     if not api_keys:
-        print("Warning: No Gemini API keys found. Using built-in fallback script.")
         return get_fallback_script()
     
     prompt = (
@@ -37,12 +36,10 @@ def generate_viral_content():
         "SCRIPT: [The main narration text for voiceover]"
     )
     
-    # Updated to the current standard flash model as recommended by the API
     model_name = 'gemini-3.8-flash'
     
     for idx, api_key in enumerate(api_keys):
         try:
-            print(f"Trying Gemini API Key index {idx+1}...")
             client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
                 model=model_name,
@@ -51,7 +48,6 @@ def generate_viral_content():
             
             if response and response.text:
                 output = response.text.strip()
-                
                 title = "Mysterious AI Fact #shorts"
                 description = "#shorts #mystery #facts"
                 script = output
@@ -79,14 +75,11 @@ def generate_viral_content():
                 return title, description, script
                 
         except Exception as e:
-            print(f"Key index {idx+1} failed: {str(e)}")
             time.sleep(1)
                     
-    print("All Gemini API keys exhausted or unavailable. Using emergency fallback script so video production continues!")
     return get_fallback_script()
 
 def get_fallback_script():
-    """Provides a pre-written viral mystery script if API quota or model access fails."""
     title = "The Terrifying Glitch in Human Memory 🧠⚠️ #shorts"
     description = "Have you ever experienced the Mandela effect? Here is the terrifying truth about your brain. #shorts #mystery #facts"
     script = (
@@ -97,8 +90,45 @@ def get_fallback_script():
     )
     return title, description, script
 
+def download_cinematic_video(output_filename="background.mp4"):
+    """Fetches a high-quality vertical cinematic stock video from Pexels API."""
+    pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
+    
+    # Default public vertical stock video URL if no Pexels key is provided
+    fallback_video_url = "https://videos.pexels.com/video-files/3195394/3195394-uhd_2160_3840_25fps.mp4"
+    
+    if pexels_key:
+        try:
+            headers = {"Authorization": pexels_key}
+            # Searching for dark mysterious cinematic visuals
+            response = requests.get(
+                "https://api.pexels.com/videos/search?query=dark+mysterious+cinematic+vertical&orientation=portrait&per_page=5",
+                headers=headers
+            )
+            if response.status_code == 200:
+                data = response.json()
+                videos = data.get("videos", [])
+                if videos:
+                    # Pick the first video file with HD/UHD quality link
+                    video_files = videos[0].get("video_files", [])
+                    for vf in video_files:
+                        if vf.get("width") and vf.get("width") <= 1080 and vf.get("link"):
+                            fallback_video_url = vf["link"]
+                            break
+        except Exception as e:
+            print(f"Pexels API fetch error, using default cinematic background: {str(e)}")
+            
+    print(f"Downloading cinematic background video...")
+    vid_data = requests.get(fallback_video_url, stream=True)
+    with open(output_filename, "wb") as f:
+        for chunk in vid_data.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+    print("Cinematic background video downloaded successfully!")
+    return output_filename
+
 def create_video(script_text, output_filename="output.mp4"):
-    """Generates a reliable vertical video stream compatible with modern MoviePy and ffmpeg yuv420p formatting."""
+    """Combines downloaded 3D/cinematic stock video with gTTS voiceover audio."""
     print("Generating voiceover audio...")
     if not script_text or not script_text.strip():
         raise Exception("No text to speak provided for video generation!")
@@ -108,19 +138,31 @@ def create_video(script_text, output_filename="output.mp4"):
     tts.save(audio_path)
     
     audio_clip = AudioFileClip(audio_path)
-    duration = audio_clip.duration
-    print(f"Audio duration loaded: {duration:.2f} seconds")
+    audio_duration = audio_clip.duration
+    print(f"Audio duration required: {audio_duration:.2f} seconds")
     
-    print(f"Creating vertical video background (1080x1920)...")
-    video = ColorClip(size=(1080, 1920), color=(25, 35, 55), duration=duration)
+    # Download real cinematic vertical stock video
+    bg_video_path = download_cinematic_video()
     
+    print("Processing and trimming video with MoviePy...")
+    video_clip = VideoFileClip(bg_video_path)
+    
+    # Loop or trim video to match audio duration perfectly
+    if video_clip.duration < audio_duration:
+        from moviepy.video.compositing.concatenate import concatenate_videoclips
+        loops = int(audio_duration // video_clip.duration) + 1
+        video_clip = concatenate_videoclips([video_clip] * loops)
+        
+    video_clip = video_clip.subclipped(0, audio_duration)
+    
+    # Attach audio
     try:
-        video = video.with_audio(audio_clip)
+        final_video = video_clip.with_audio(audio_clip)
     except AttributeError:
-        video = video.set_audio(audio_clip)
+        final_video = video_clip.set_audio(audio_clip)
     
-    print(f"Rendering final video file with ffmpeg yuv420p params: {output_filename}...")
-    video.write_videofile(
+    print(f"Rendering final cinematic video file: {output_filename}...")
+    final_video.write_videofile(
         output_filename, 
         fps=24, 
         codec='libx264', 
@@ -131,9 +173,13 @@ def create_video(script_text, output_filename="output.mp4"):
     )
     
     audio_clip.close()
-    video.close()
+    final_video.close()
+    video_clip.close()
     
-    print("Video rendering completed successfully!")
+    if os.path.exists(bg_video_path):
+        os.remove(bg_video_path)
+        
+    print("Cinematic video rendering completed successfully!")
     return output_filename
 
 def upload_to_youtube(video_file_path, title, description):
@@ -186,7 +232,7 @@ def upload_to_youtube(video_file_path, title, description):
     print(f"View it here: https://youtu.be/{response.get('id')}")
 
 if __name__ == "__main__":
-    print("=== Mysterious AI Single-Video Pipeline Initialized ===")
+    print("=== Cinematic Mysterious AI Pipeline Initialized ===")
     
     try:
         title, description, script = generate_viral_content()
@@ -197,7 +243,7 @@ if __name__ == "__main__":
         if os.path.exists(video_path):
             upload_to_youtube(video_path, title, description)
             os.remove(video_path)
-            print("=== Video Generated and Uploaded Successfully! ===")
+            print("=== Cinematic Video Generated and Uploaded Successfully! ===")
         else:
             print(f"Error: Video file '{video_path}' was not created.")
             
