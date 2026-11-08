@@ -1,4 +1,4 @@
-name: Mysterious AI Shorts Pipeline
+Name: Mysterious AI Shorts Pipeline
 
 on:
   workflow_dispatch: # Manual trigger ke liye
