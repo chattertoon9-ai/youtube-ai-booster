@@ -37,7 +37,6 @@ def generate_viral_content():
         "SCRIPT: [The main narration text for voiceover]"
     )
     
-    # Using the stable, high-performance flash model identifier for google-genai
     model_name = 'gemini-3.8-flash'
     
     for key_index, api_key in enumerate(api_keys):
@@ -173,7 +172,8 @@ def upload_to_youtube(video_file_path, title, description):
 if __name__ == "__main__":
     print("=== Mysterious AI Multi-Video Pipeline Initialized ===")
     
-    TOTAL_VIDEOS_TO_GENERATE = 4
+    # Reduced batch size to 2 to safely respect YouTube daily upload thresholds for newer accounts
+    TOTAL_VIDEOS_TO_GENERATE = 2
     
     for i in range(1, TOTAL_VIDEOS_TO_GENERATE + 1):
         print(f"\n--- Starting Video {i} of {TOTAL_VIDEOS_TO_GENERATE} ---")
@@ -191,8 +191,8 @@ if __name__ == "__main__":
                 print(f"Error: Video file '{video_path}' was not created.")
                 
             if i < TOTAL_VIDEOS_TO_GENERATE:
-                print("Waiting 10 seconds before next video...")
-                time.sleep(10)
+                print("Waiting 15 seconds before next video...")
+                time.sleep(15)
                 
         except Exception as e:
             print(f"Error in video #{i}: {str(e)}")
