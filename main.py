@@ -1,7 +1,7 @@
 import os
 import time
 from google import genai
-from google.oauth2.credentials import Credentials
+from google.oauth2.credentials Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from gtts import gTTS
@@ -16,12 +16,23 @@ except ImportError:
     TextClip = None
 
 def generate_viral_content():
-    """Generates viral mystery script, title, and description using Gemini API with key rotation."""
-    raw_keys = os.environ.get("GEMINI_API_KEY", "")
-    api_keys = [k.strip() for k in raw_keys.split(",") if k.strip()]
+    """Generates viral mystery script using Gemini API with multiple keys rotation (Key 1 to 6)."""
     
+    # Collect all Gemini keys from environment variables (GEMINI_API_KEY up to GEMINI_API_KEY_6)
+    api_keys = []
+    for i in range(1, 7):
+        key_name = f"GEMINI_API_KEY_{i}" if i > 1 else "GEMINI_API_KEY"
+        k = os.environ.get(key_name, "")
+        if k.strip():
+            api_keys.append(k.strip())
+            
+    # Fallback to comma-separated single string if needed
     if not api_keys:
-        raise Exception("GEMINI_API_KEY environment variable is missing or empty.")
+        raw_keys = os.environ.get("GEMINI_API_KEY", "")
+        api_keys = [k.strip() for k in raw_keys.split(",") if k.strip()]
+        
+    if not api_keys:
+        raise Exception("No Gemini API keys found in environment variables!")
     
     prompt = (
         "Create an extremely engaging, high-retention 30-second YouTube Short script about an unsolved mystery, "
@@ -67,7 +78,7 @@ def generate_viral_content():
             print(f"API Key #{key_index + 1} failed: {str(e)}")
             time.sleep(2)
                     
-    raise Exception("All API keys failed or exhausted daily limits.")
+    raise Exception("All Gemini API keys failed or exhausted daily limits.")
 
 def create_video(script_text, output_filename="output.mp4"):
     """Converts script text to speech and generates a dark vertical background video using MoviePy."""
@@ -101,7 +112,11 @@ def create_video(script_text, output_filename="output.mp4"):
         except Exception as e:
             print(f"TextClip warning (proceeding with background only): {e}")
             
-    video = video.set_audio(audio_clip)
+    # Attach audio using with_audio or set_audio fallback
+    try:
+        video = video.with_audio(audio_clip)
+    except AttributeError:
+        video = video.set_audio(audio_clip)
     
     print(f"Rendering video file: {output_filename}...")
     video.write_videofile(
