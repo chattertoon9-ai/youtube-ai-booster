@@ -29,6 +29,7 @@ def generate_viral_content():
     if not api_keys:
         return get_fallback_script()
     
+    # Updated highly-optimized viral prompt with historical fact examples and SEO tags
     prompt = (
         "Create an extremely engaging, high-retention 30-second YouTube Short script about mind-blowing real-world facts, "
         "hidden historical truths, unsolved mysteries, or terrifying psychological facts. "
@@ -37,7 +38,7 @@ def generate_viral_content():
         "Start with a strong psychological hook or mind-bending question in the first 3 seconds.\n\n"
         "Format your output strictly as follows:\n"
         "TITLE: [Catchy viral title with emojis #shorts]\n"
-        "DESCRIPTION: [Engaging description with #shorts #facts #mystery #history]\n"
+        "DESCRIPTION: [Engaging description optimized for viral reach, loaded with #shorts #facts #mystery #history #viral]\n"
         "SCRIPT: [The main narration text for voiceover]"
     )
     
@@ -54,7 +55,7 @@ def generate_viral_content():
             if response and response.text:
                 output = response.text.strip()
                 title = "Mysterious AI Fact #shorts"
-                description = "#shorts #mystery #facts"
+                description = "#shorts #mystery #facts #viral"
                 script = output
                 
                 lines = output.split('\n')
@@ -86,7 +87,7 @@ def generate_viral_content():
 
 def get_fallback_script():
     title = "The Town Where Everyone Lives in One Building 🏢❄️ #shorts"
-    description = "Have you heard of Whittier, Alaska? An entire town lives under one roof. #shorts #history #facts"
+    description = "Have you heard of Whittier, Alaska? An entire town lives under one roof. #shorts #history #facts #viral"
     script = (
         "Did you know there is a town in Alaska where nearly the entire population lives inside a single multi-story building? "
         "Begich Towers contains a grocery store, post office, police station, and church all under one roof. "
@@ -122,7 +123,6 @@ def download_pixabay_image(query_keyword="mystery history dark cinematic", outpu
                         
                         # Apply a dark cinematic overlay for professional look and text readability
                         img = Image.open(output_filename).convert("RGBA")
-                        # Resize/Center crop to vertical shorts 1080x1920 if needed
                         img = img.resize((1080, 1920), Image.Resampling.LANCZOS)
                         overlay = Image.new("RGBA", img.size, (15, 12, 25, 170))
                         img = Image.alpha_composite(img, overlay)
@@ -314,7 +314,7 @@ def upload_to_youtube(video_file_path, title, description):
         "snippet": {
             "title": title[:100],
             "description": description,
-            "tags": ["shorts", "mystery", "facts", "ai", "mysteriousai"],
+            "tags": ["shorts", "mystery", "facts", "ai", "mysteriousai", "viral"],
             "categoryId": "24"
         },
         "status": {
