@@ -99,7 +99,6 @@ def get_fallback_script():
 
 def download_cinematic_video(output_filename="background.mp4"):
     """Downloads a real cinematic vertical background video using proper browser headers."""
-    # Reliable direct cinematic vertical video stream links
     video_urls = [
         "https://videos.pexels.com/video-files/3195394/3195394-uhd_2160_3840_25fps.mp4",
         "https://videos.pexels.com/video-files/5377684/5377684-uhd_1080_1920_25fps.mp4",
@@ -122,11 +121,10 @@ def download_cinematic_video(output_filename="background.mp4"):
     except Exception as e:
         print(f"Download stream error: {str(e)}")
         
-    # Fallback to solid gradient background if download fails
     return None
 
-def create_video_with_captions(script_text, output_filename="output.mp4"):
-    """Creates a cinematic video with background footage and moving text captions/subtitles."""
+def create_video_with_hook_and_captions(script_text, video_title, output_filename="output.mp4"):
+    """Creates a cinematic video featuring a strong Hook Thumbnail at the start and moving subtitles."""
     print("Generating voiceover audio...")
     if not script_text or not script_text.strip():
         raise Exception("No text to speak provided for video generation!")
@@ -158,64 +156,64 @@ def create_video_with_captions(script_text, output_filename="output.mp4"):
         from moviepy.video.VideoClip import ColorClip
         video_clip = ColorClip(size=(1080, 1920), color=(15, 20, 35), duration=audio_duration)
         
-    # Split script into catchy chunks for captions
-    words = script_text.split()
-    chunk_size = 6  # words per caption frame
-    chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
-    if not chunks:
-        chunks = [script_text]
-        
-    chunk_duration = audio_duration / len(chunks)
-    
-    # Generate caption clips using Pillow
     clips_list = [video_clip]
     
     try:
-        # Try loading a standard font, fallback to default if not available
         try:
-            font = ImageFont.truetype("DejaVuSans-Bold.ttf", 55)
+            font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 65)
+            font_sub = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
         except:
-            font = ImageFont.load_default()
-            
+            font_title = ImageFont.load_default()
+            font_sub = ImageFont.load_default()
+
+        # 1. Create Hook Thumbnail Title Card for first 4 seconds
+        hook_duration = min(4.0, audio_duration)
+        img_hook = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+        draw_h = ImageDraw.Draw(img_hook)
+        
+        # Clean up title for overlay display
+        display_title = video_title.replace("#shorts", "").strip()
+        
+        # Draw background highlight banner for hook
+        draw_h.rounded_rectangle([80, 750, 1000, 1150], radius=30, fill=(180, 20, 20, 230))
+        
+        # Add Hook text lines
+        draw_h.text((120, 820), "⚠️ MUST KNOW FACT:", font=font_sub, fill=(255, 255, 255, 255))
+        draw_h.text((120, 920), display_title[:50], font=font_title, fill=(255, 255, 255, 255))
+        
+        hook_path = "hook_thumb.png"
+        img_hook.save(hook_path)
+        hook_clip = ImageClip(hook_path).with_duration(hook_duration).with_start(0)
+        clips_list.append(hook_clip)
+
+        # 2. Create Dynamic Moving Captions for the rest of the video
+        words = script_text.split()
+        chunk_size = 5
+        chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
+        
+        remaining_duration = max(audio_duration - hook_duration, 1.0)
+        chunk_duration = remaining_duration / max(len(chunks), 1)
+        
         for idx, chunk in enumerate(chunks):
-            start_t = idx * chunk_duration
-            end_t = min((idx + 1) * chunk_duration, audio_duration)
-            dur = max(end_t - start_t, 1.0)
+            start_t = hook_duration + (idx * chunk_duration)
+            end_t = min(start_t + chunk_duration, audio_duration)
+            dur = max(end_t - start_t, 0.8)
             
-            # Create transparent image for text
             img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
             draw = ImageDraw.Draw(img)
             
-            # Text wrapping and positioning in center/lower-third
-            margin = 80
-            max_width = 1080 - (margin * 2)
-            
-            # Simple text rendering box
-            bbox = draw.textbbox((0, 0), chunk, font=font)
-            w = bbox[2] - bbox[0]
-            h = bbox[3] - bbox[1]
-            
-            x = (1080 - w) / 2
-            y = 1920 / 2 - 100
-            
-            # Draw semi-transparent background box for readability
-            box_padding = 20
-            draw.rounded_rectangle(
-                [x - box_padding, y - box_padding, x + w + box_padding, y + h + box_padding],
-                radius=15,
-                fill=(0, 0, 0, 200)
-            )
-            
-            # Draw text
-            draw.text((x, y), chunk, font=font, fill=(255, 255, 255, 255))
+            # Draw caption box in lower third
+            draw.rounded_rectangle([100, 1300, 980, 1550], radius=20, fill=(0, 0, 0, 210))
+            draw.text((140, 1360), chunk, font=font_sub, fill=(255, 255, 0, 255)) # Yellow highlight for retention
             
             img_path = f"caption_{idx}.png"
             img.save(img_path)
             
             txt_clip = ImageClip(img_path).with_duration(dur).with_start(start_t)
             clips_list.append(txt_clip)
+
     except Exception as e:
-        print(f"Caption overlay warning: {str(e)}")
+        print(f"Thumbnail / Caption overlay warning: {str(e)}")
 
     final_composite = CompositeVideoClip(clips_list)
     
@@ -224,7 +222,7 @@ def create_video_with_captions(script_text, output_filename="output.mp4"):
     except AttributeError:
         final_composite = final_composite.set_audio(audio_clip)
         
-    print(f"Rendering final cinematic video with animated captions: {output_filename}...")
+    print(f"Rendering final video with Hook Thumbnail and Captions: {output_filename}...")
     final_composite.write_videofile(
         output_filename, 
         fps=24, 
@@ -242,12 +240,14 @@ def create_video_with_captions(script_text, output_filename="output.mp4"):
     
     if bg_video_path and os.path.exists(bg_video_path):
         os.remove(bg_video_path)
-    for idx in range(len(chunks)):
+    if os.path.exists("hook_thumb.png"):
+        os.remove("hook_thumb.png")
+    for idx in range(100):
         p = f"caption_{idx}.png"
         if os.path.exists(p):
             os.remove(p)
             
-    print("Cinematic video with captions rendered successfully!")
+    print("Video rendered successfully with hook and subtitles!")
     return output_filename
 
 def upload_to_youtube(video_file_path, title, description):
@@ -306,7 +306,7 @@ if __name__ == "__main__":
         title, description, script = generate_viral_content()
         print(f"[Generated Title]: {title}")
         
-        video_path = create_video_with_captions(script, output_filename="output.mp4")
+        video_path = create_video_with_hook_and_captions(script, title, output_filename="output.mp4")
         
         if os.path.exists(video_path):
             upload_to_youtube(video_path, title, description)
