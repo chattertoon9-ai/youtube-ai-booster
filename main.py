@@ -29,12 +29,10 @@ def generate_viral_content():
     if not api_keys:
         return get_fallback_script()
     
-    # Updated highly-optimized viral prompt with historical fact examples and SEO tags
+    # Prompt updated to strictly avoid duplication and ensure unique real-world facts
     prompt = (
-        "Create an extremely engaging, high-retention 30-second YouTube Short script about mind-blowing real-world facts, "
-        "hidden historical truths, unsolved mysteries, or terrifying psychological facts. "
-        "Draw inspiration from shocking facts like 'An entire town in Alaska living inside a single building (Begich Towers)' "
-        "or 'The United States having no official national language at the federal level'. "
+        "Create an extremely engaging, high-retention 30-second YouTube Short script about a completely unique, mind-blowing real-world fact, "
+        "hidden historical truth, unsolved mystery, or terrifying psychological fact. Do NOT repeat previous topics. "
         "Start with a strong psychological hook or mind-bending question in the first 3 seconds.\n\n"
         "Format your output strictly as follows:\n"
         "TITLE: [Catchy viral title with emojis #shorts]\n"
@@ -86,16 +84,36 @@ def generate_viral_content():
     return get_fallback_script()
 
 def get_fallback_script():
-    title = "The Town Where Everyone Lives in One Building 🏢❄️ #shorts"
-    description = "Have you heard of Whittier, Alaska? An entire town lives under one roof. #shorts #history #facts #viral"
-    script = (
-        "Did you know there is a town in Alaska where nearly the entire population lives inside a single multi-story building? "
-        "Begich Towers contains a grocery store, post office, police station, and church all under one roof. "
-        "Due to extreme weather, residents can go months without stepping outdoors. "
-        "Even school children travel to class through a secret underground tunnel. "
-        "Subscribe for more shocking real-world facts."
-    )
-    return title, description, script
+    """Returns a random unique script from a diverse pool to prevent duplication."""
+    fallback_topics = [
+        (
+            "The Country With No Official Language 🇺🇸🤫 #shorts",
+            "Did you know the United States has no official national language? #shorts #facts #history #viral",
+            "Did you know that the United States does not actually have an official language at the federal level? "
+            "Despite English being widely spoken and used in government, the US Constitution and federal laws "
+            "have never declared any official national language. Individual states can choose their own, "
+            "but the entire country has no official tongue. "
+            "Subscribe for more mind-blowing historical secrets."
+        ),
+        (
+            "The Terrifying Glitch in Human Memory 🧠⚠️ #shorts",
+            "Have you ever experienced the Mandela effect? Here is the truth about your brain. #shorts #mystery #facts #viral",
+            "Did you know your brain is actively rewriting your memories every single day? "
+            "Scientists discovered that every time you recall a memory, you aren't remembering the original event—you are remembering the last time you thought about it. "
+            "This means a huge portion of what you believe happened in your past never actually occurred the way you remember it. "
+            "Subscribe for more dark psychological facts."
+        ),
+        (
+            "The Secret Deep Sea Anomaly Nobody Talks About 🌊⚓ #shorts",
+            "What is hiding at the bottom of the ocean? #shorts #mystery #ocean #viral",
+            "Did you know we know less about the deep ocean floor than we do about the surface of Mars? "
+            "More than eighty percent of our oceans remain completely unmapped and unexplored. "
+            "Deep beneath the crushing pressure, scientists frequently pick up unexplained acoustic anomalies and mysterious sounds "
+            "that modern science still cannot identify. What secrets are lurking in the dark abyss? "
+            "Subscribe for more unsolved mysteries."
+        )
+    ]
+    return random.choice(fallback_topics)
 
 def download_pixabay_image(query_keyword="mystery history dark cinematic", output_filename="bg_reference.jpg"):
     """Fetches a relevant professional photo background from Pixabay API using the provided key."""
