@@ -2,6 +2,7 @@ import os
 import time
 import random
 import requests
+from PIL import Image, ImageDraw, ImageFont
 from google import genai
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -9,8 +10,10 @@ from googleapiclient.http import MediaFileUpload
 from gtts import gTTS
 
 # MoviePy modern imports
-from moviepy.video.VideoClip import ColorClip
+from moviepy.video.io.VideoFileClip import VideoFileClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
+from moviepy.video.VideoClip import ImageClip
+from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
 
 def generate_viral_content():
     """Generates viral mystery and historical fact script using Gemini API with fallback backup script."""
@@ -27,7 +30,6 @@ def generate_viral_content():
     if not api_keys:
         return get_fallback_script()
     
-    # Combined single powerful prompt covering both real-world historical facts and dark mysteries
     prompt = (
         "Create an extremely engaging, high-retention 30-second YouTube Short script about mind-blowing real-world facts, "
         "hidden historical truths, unsolved mysteries, or terrifying psychological facts. "
@@ -87,16 +89,44 @@ def get_fallback_script():
     title = "The Town Where Everyone Lives in One Building 🏢❄️ #shorts"
     description = "Have you heard of Whittier, Alaska? An entire town lives under one roof. #shorts #history #facts"
     script = (
-        "Did you know there is a town in Alaska where nearly the entire population of over two hundred people lives inside a single multi-story building? "
+        "Did you know there is a town in Alaska where nearly the entire population lives inside a single multi-story building? "
         "Begich Towers contains a grocery store, post office, police station, and church all under one roof. "
-        "Due to extreme weather and hurricane-force winds, residents can go months without ever stepping outside outdoors. "
+        "Due to extreme weather, residents can go months without stepping outdoors. "
         "Even school children travel to class through a secret underground tunnel. "
-        "Would you be able to live your entire life inside one building? Subscribe for more shocking real-world facts."
+        "Subscribe for more shocking real-world facts."
     )
     return title, description, script
 
-def create_video(script_text, output_filename="output.mp4"):
-    """Generates a high-contrast visual video paired with gTTS voiceover audio safely without stream corruption errors."""
+def download_cinematic_video(output_filename="background.mp4"):
+    """Downloads a real cinematic vertical background video using proper browser headers."""
+    # Reliable direct cinematic vertical video stream links
+    video_urls = [
+        "https://videos.pexels.com/video-files/3195394/3195394-uhd_2160_3840_25fps.mp4",
+        "https://videos.pexels.com/video-files/5377684/5377684-uhd_1080_1920_25fps.mp4",
+        "https://videos.pexels.com/video-files/7578552/7578552-uhd_1080_1920_30fps.mp4"
+    ]
+    
+    selected_url = random.choice(video_urls)
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    
+    print(f"Downloading cinematic background video...")
+    try:
+        response = requests.get(selected_url, headers=headers, stream=True, timeout=20)
+        if response.status_code == 200:
+            with open(output_filename, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            print("Cinematic background downloaded successfully!")
+            return output_filename
+    except Exception as e:
+        print(f"Download stream error: {str(e)}")
+        
+    # Fallback to solid gradient background if download fails
+    return None
+
+def create_video_with_captions(script_text, output_filename="output.mp4"):
+    """Creates a cinematic video with background footage and moving text captions/subtitles."""
     print("Generating voiceover audio...")
     if not script_text or not script_text.strip():
         raise Exception("No text to speak provided for video generation!")
@@ -109,17 +139,93 @@ def create_video(script_text, output_filename="output.mp4"):
     audio_duration = audio_clip.duration
     print(f"Audio duration required: {audio_duration:.2f} seconds")
     
-    print(f"Creating professional vertical cinematic background (1080x1920)...")
-    # Using a sleek dark cinematic gradient/color theme (20, 25, 40) that renders reliably on YouTube Shorts
-    video = ColorClip(size=(1080, 1920), color=(20, 25, 40), duration=audio_duration)
+    bg_video_path = download_cinematic_video()
+    
+    video_clip = None
+    if bg_video_path and os.path.exists(bg_video_path):
+        try:
+            video_clip = VideoFileClip(bg_video_path)
+            if video_clip.duration < audio_duration:
+                from moviepy.video.compositing.concatenate import concatenate_videoclips
+                loops = int(audio_duration // video_clip.duration) + 1
+                video_clip = concatenate_videoclips([video_clip] * loops)
+            video_clip = video_clip.subclipped(0, audio_duration)
+        except Exception as e:
+            print(f"Video clip load error: {str(e)}, using color background fallback.")
+            video_clip = None
+            
+    if video_clip is None:
+        from moviepy.video.VideoClip import ColorClip
+        video_clip = ColorClip(size=(1080, 1920), color=(15, 20, 35), duration=audio_duration)
+        
+    # Split script into catchy chunks for captions
+    words = script_text.split()
+    chunk_size = 6  # words per caption frame
+    chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
+    if not chunks:
+        chunks = [script_text]
+        
+    chunk_duration = audio_duration / len(chunks)
+    
+    # Generate caption clips using Pillow
+    clips_list = [video_clip]
     
     try:
-        final_video = video.with_audio(audio_clip)
-    except AttributeError:
-        final_video = video.set_audio(audio_clip)
+        # Try loading a standard font, fallback to default if not available
+        try:
+            font = ImageFont.truetype("DejaVuSans-Bold.ttf", 55)
+        except:
+            font = ImageFont.load_default()
+            
+        for idx, chunk in enumerate(chunks):
+            start_t = idx * chunk_duration
+            end_t = min((idx + 1) * chunk_duration, audio_duration)
+            dur = max(end_t - start_t, 1.0)
+            
+            # Create transparent image for text
+            img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            
+            # Text wrapping and positioning in center/lower-third
+            margin = 80
+            max_width = 1080 - (margin * 2)
+            
+            # Simple text rendering box
+            bbox = draw.textbbox((0, 0), chunk, font=font)
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+            
+            x = (1080 - w) / 2
+            y = 1920 / 2 - 100
+            
+            # Draw semi-transparent background box for readability
+            box_padding = 20
+            draw.rounded_rectangle(
+                [x - box_padding, y - box_padding, x + w + box_padding, y + h + box_padding],
+                radius=15,
+                fill=(0, 0, 0, 200)
+            )
+            
+            # Draw text
+            draw.text((x, y), chunk, font=font, fill=(255, 255, 255, 255))
+            
+            img_path = f"caption_{idx}.png"
+            img.save(img_path)
+            
+            txt_clip = ImageClip(img_path).with_duration(dur).with_start(start_t)
+            clips_list.append(txt_clip)
+    except Exception as e:
+        print(f"Caption overlay warning: {str(e)}")
+
+    final_composite = CompositeVideoClip(clips_list)
     
-    print(f"Rendering final video file with ffmpeg yuv420p params: {output_filename}...")
-    final_video.write_videofile(
+    try:
+        final_composite = final_composite.with_audio(audio_clip)
+    except AttributeError:
+        final_composite = final_composite.set_audio(audio_clip)
+        
+    print(f"Rendering final cinematic video with animated captions: {output_filename}...")
+    final_composite.write_videofile(
         output_filename, 
         fps=24, 
         codec='libx264', 
@@ -129,11 +235,19 @@ def create_video(script_text, output_filename="output.mp4"):
         logger=None
     )
     
+    # Cleanup temporary files
     audio_clip.close()
-    final_video.close()
-    video.close()
+    video_clip.close()
+    final_composite.close()
     
-    print("Video rendering completed successfully without stream corruption!")
+    if bg_video_path and os.path.exists(bg_video_path):
+        os.remove(bg_video_path)
+    for idx in range(len(chunks)):
+        p = f"caption_{idx}.png"
+        if os.path.exists(p):
+            os.remove(p)
+            
+    print("Cinematic video with captions rendered successfully!")
     return output_filename
 
 def upload_to_youtube(video_file_path, title, description):
@@ -192,7 +306,7 @@ if __name__ == "__main__":
         title, description, script = generate_viral_content()
         print(f"[Generated Title]: {title}")
         
-        video_path = create_video(script, output_filename="output.mp4")
+        video_path = create_video_with_captions(script, output_filename="output.mp4")
         
         if os.path.exists(video_path):
             upload_to_youtube(video_path, title, description)
