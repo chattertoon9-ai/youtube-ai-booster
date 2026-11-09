@@ -13,7 +13,7 @@ from moviepy.video.VideoClip import ColorClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 def generate_viral_content():
-    """Generates viral mystery script using Gemini API with fallback backup script."""
+    """Generates viral mystery and historical fact script using Gemini API with fallback backup script."""
     api_keys = []
     primary_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if primary_key:
@@ -27,13 +27,16 @@ def generate_viral_content():
     if not api_keys:
         return get_fallback_script()
     
+    # Combined single powerful prompt covering both real-world historical facts and dark mysteries
     prompt = (
-        "Create an extremely engaging, high-retention 30-second YouTube Short script about an unsolved mystery, "
-        "dark historical secret, or terrifying psychological fact. "
-        "Start with a strong psychological hook in the first 3 seconds.\n\n"
+        "Create an extremely engaging, high-retention 30-second YouTube Short script about mind-blowing real-world facts, "
+        "hidden historical truths, unsolved mysteries, or terrifying psychological facts. "
+        "Draw inspiration from shocking facts like 'An entire town in Alaska living inside a single building (Begich Towers)' "
+        "or 'The United States having no official national language at the federal level'. "
+        "Start with a strong psychological hook or mind-bending question in the first 3 seconds.\n\n"
         "Format your output strictly as follows:\n"
         "TITLE: [Catchy viral title with emojis #shorts]\n"
-        "DESCRIPTION: [Engaging description with #shorts #mystery #facts]\n"
+        "DESCRIPTION: [Engaging description with #shorts #facts #mystery #history]\n"
         "SCRIPT: [The main narration text for voiceover]"
     )
     
@@ -81,13 +84,14 @@ def generate_viral_content():
     return get_fallback_script()
 
 def get_fallback_script():
-    title = "The Terrifying Glitch in Human Memory 🧠⚠️ #shorts"
-    description = "Have you ever experienced the Mandela effect? Here is the terrifying truth about your brain. #shorts #mystery #facts"
+    title = "The Town Where Everyone Lives in One Building 🏢❄️ #shorts"
+    description = "Have you heard of Whittier, Alaska? An entire town lives under one roof. #shorts #history #facts"
     script = (
-        "Did you know your brain is actively rewriting your memories every single day? "
-        "Scientists discovered that every time you recall a memory, you aren't remembering the original event—you are remembering the last time you thought about it. "
-        "This means a huge portion of what you believe happened in your past... never actually occurred the way you remember it. "
-        "What else is your mind hiding from you? Subscribe for more dark psychological facts."
+        "Did you know there is a town in Alaska where nearly the entire population of over two hundred people lives inside a single multi-story building? "
+        "Begich Towers contains a grocery store, post office, police station, and church all under one roof. "
+        "Due to extreme weather and hurricane-force winds, residents can go months without ever stepping outside outdoors. "
+        "Even school children travel to class through a secret underground tunnel. "
+        "Would you be able to live your entire life inside one building? Subscribe for more shocking real-world facts."
     )
     return title, description, script
 
