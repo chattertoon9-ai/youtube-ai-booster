@@ -10,7 +10,6 @@ from googleapiclient.http import MediaFileUpload
 from gtts import gTTS
 
 # MoviePy modern imports
-from moviepy.video.io.VideoFileClip import VideoFileClip
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 from moviepy.video.VideoClip import ImageClip, ColorClip
 from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
@@ -97,32 +96,46 @@ def get_fallback_script():
     )
     return title, description, script
 
-def download_cinematic_video(output_filename="background.mp4"):
-    """Downloads a real cinematic vertical background video using proper browser headers."""
-    video_urls = [
-        "https://videos.pexels.com/video-files/3195394/3195394-uhd_2160_3840_25fps.mp4",
-        "https://videos.pexels.com/video-files/5377684/5377684-uhd_1080_1920_25fps.mp4",
-        "https://videos.pexels.com/video-files/7578552/7578552-uhd_1080_1920_30fps.mp4"
-    ]
+def download_pixabay_image(query_keyword="mystery history dark cinematic", output_filename="bg_reference.jpg"):
+    """Fetches a relevant professional photo background from Pixabay API using the provided key."""
+    pixabay_key = os.environ.get("PIXABAY_API_KEY", "58493789-48e94ff1d6193dbd5fce48fc5").strip()
     
-    selected_url = random.choice(video_urls)
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    search_queries = ["history dark mystery", "cinematic architecture", "scary secret vintage", "creepy historical background"]
+    selected_query = random.choice(search_queries)
+    
+    api_url = f"https://pixabay.com/api/?key={pixabay_key}&q={requests.utils.quote(selected_query)}&image_type=photo&orientation=vertical&safesearch=true&per_page=10"
     
     try:
-        response = requests.get(selected_url, headers=headers, stream=True, timeout=15)
-        if response.status_code == 200:
-            with open(output_filename, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            return output_filename
+        print(f"Searching Pixabay for background image: '{selected_query}'...")
+        res = requests.get(api_url, timeout=15)
+        if res.status_code == 200:
+            data = res.json()
+            hits = data.get("hits", [])
+            if hits:
+                img_item = random.choice(hits)
+                img_url = img_item.get("largeImageURL") or img_item.get("webformatURL")
+                if img_url:
+                    img_res = requests.get(img_url, timeout=15)
+                    if img_res.status_code == 200:
+                        with open(output_filename, "wb") as f:
+                            f.write(img_res.content)
+                        
+                        # Apply a dark cinematic overlay for professional look and text readability
+                        img = Image.open(output_filename).convert("RGBA")
+                        # Resize/Center crop to vertical shorts 1080x1920 if needed
+                        img = img.resize((1080, 1920), Image.Resampling.LANCZOS)
+                        overlay = Image.new("RGBA", img.size, (15, 12, 25, 170))
+                        img = Image.alpha_composite(img, overlay)
+                        img.convert("RGB").save(output_filename)
+                        print("Pixabay background image successfully downloaded and styled!")
+                        return output_filename
     except Exception as e:
-        print(f"Download stream notice: {str(e)}")
+        print(f"Pixabay API notice: {str(e)}")
         
     return None
 
-def create_video_with_pro_thumbnail(script_text, video_title, output_filename="output.mp4"):
-    """Creates a high-retention video featuring a professional documentary-style thumbnail and wrapped multi-line captions."""
+def create_video_with_pixabay_visuals(script_text, video_title, output_filename="output.mp4"):
+    """Creates a high-retention video featuring Pixabay reference photos, pro thumbnail, and wrapped captions."""
     print("Generating voiceover audio...")
     if not script_text or not script_text.strip():
         raise Exception("No text to speak provided for video generation!")
@@ -135,25 +148,20 @@ def create_video_with_pro_thumbnail(script_text, video_title, output_filename="o
     audio_duration = audio_clip.duration
     print(f"Audio duration required: {audio_duration:.2f} seconds")
     
-    bg_video_path = download_cinematic_video()
+    bg_image_path = download_pixabay_image()
     
-    video_clip = None
-    if bg_video_path and os.path.exists(bg_video_path):
+    bg_clip = None
+    if bg_image_path and os.path.exists(bg_image_path):
         try:
-            video_clip = VideoFileClip(bg_video_path)
-            if video_clip.duration < audio_duration:
-                from moviepy.video.compositing.concatenate import concatenate_videoclips
-                loops = int(audio_duration // video_clip.duration) + 1
-                video_clip = concatenate_videoclips([video_clip] * loops)
-            video_clip = video_clip.subclipped(0, audio_duration)
+            bg_clip = ImageClip(bg_image_path).with_duration(audio_duration)
         except Exception as e:
-            print(f"Video clip load notice: {str(e)}")
-            video_clip = None
+            print(f"Background image clip load notice: {str(e)}")
+            bg_clip = None
             
-    if video_clip is None:
-        video_clip = ColorClip(size=(1080, 1920), color=(15, 12, 25), duration=audio_duration)
+    if bg_clip is None:
+        bg_clip = ColorClip(size=(1080, 1920), color=(15, 12, 25), duration=audio_duration)
         
-    clips_list = [video_clip]
+    clips_list = [bg_clip]
     
     try:
         try:
@@ -163,14 +171,14 @@ def create_video_with_pro_thumbnail(script_text, video_title, output_filename="o
             font_main = ImageFont.load_default()
             font_sub = ImageFont.load_default()
 
-        # 1. Professional High-CTR Thumbnail Title Card (Like your reference examples)
+        # 1. Professional High-CTR Thumbnail Title Card (First 4 seconds)
         hook_duration = min(4.0, audio_duration)
         img_thumb = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
         draw_t = ImageDraw.Draw(img_thumb)
         
         display_title = video_title.replace("#shorts", "").replace("!", "").strip().upper()
         
-        # Draw striking yellow & red documentary style title banner similar to examples
+        # Draw striking yellow & dark documentary style banner
         draw_t.rounded_rectangle([70, 720, 1010, 1180], radius=25, fill=(10, 10, 10, 230))
         draw_t.rectangle([70, 720, 1010, 830], fill=(240, 190, 20, 240)) # Yellow top banner
         draw_t.text((100, 740), "THE SHOCKING TRUTH", font=font_sub, fill=(10, 10, 10, 255))
@@ -256,7 +264,7 @@ def create_video_with_pro_thumbnail(script_text, video_title, output_filename="o
     except AttributeError:
         final_composite = final_composite.set_audio(audio_clip)
         
-    print(f"Rendering final professional video: {output_filename}...")
+    print(f"Rendering final professional video with Pixabay visuals: {output_filename}...")
     final_composite.write_videofile(
         output_filename, 
         fps=24, 
@@ -268,11 +276,11 @@ def create_video_with_pro_thumbnail(script_text, video_title, output_filename="o
     )
     
     audio_clip.close()
-    video_clip.close()
+    bg_clip.close()
     final_composite.close()
     
-    if bg_video_path and os.path.exists(bg_video_path):
-        os.remove(bg_video_path)
+    if bg_image_path and os.path.exists(bg_image_path):
+        os.remove(bg_image_path)
     if os.path.exists("pro_thumbnail.png"):
         os.remove("pro_thumbnail.png")
     for idx in range(100):
@@ -280,7 +288,7 @@ def create_video_with_pro_thumbnail(script_text, video_title, output_filename="o
         if os.path.exists(p):
             os.remove(p)
             
-    print("Video rendered successfully with professional thumbnail and captions!")
+    print("Video rendered successfully with Pixabay background images and captions!")
     return output_filename
 
 def upload_to_youtube(video_file_path, title, description):
@@ -339,7 +347,7 @@ if __name__ == "__main__":
         title, description, script = generate_viral_content()
         print(f"[Generated Title]: {title}")
         
-        video_path = create_video_with_pro_thumbnail(script, title, output_filename="output.mp4")
+        video_path = create_video_with_pixabay_visuals(script, title, output_filename="output.mp4")
         
         if os.path.exists(video_path):
             upload_to_youtube(video_path, title, description)
