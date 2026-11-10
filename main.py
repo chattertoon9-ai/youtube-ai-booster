@@ -16,7 +16,7 @@ from moviepy.video.VideoClip import ImageClip, ColorClip
 from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
 
 def generate_viral_content():
-    """Generates viral mystery and historical fact script using Gemini API with fallback backup script."""
+    """Generates fully random and unique world shocking facts and viral mystery topics using Gemini API."""
     print("-> Step 1: Initializing Gemini API keys...")
     api_keys = []
     primary_key = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -29,13 +29,15 @@ def generate_viral_content():
             api_keys.append(k)
             
     if not api_keys:
-        print("-> No Gemini API keys found. Using fallback script.")
+        print("-> No Gemini API keys found. Using emergency dynamic fallback.")
         return get_fallback_script()
     
+    # Fully dynamic prompt ensuring fresh random shocking world facts every time to prevent duplication
     prompt = (
-        "Create an extremely engaging, high-retention 30-second YouTube Short script about a completely unique, mind-blowing real-world fact, "
-        "hidden historical truth, unsolved mystery, or terrifying psychological fact. Do NOT repeat previous topics. "
-        "Start with a strong psychological hook or mind-bending question in the first 3 seconds.\n\n"
+        "Create an extremely engaging, high-retention 30-second YouTube Short script about a completely random, "
+        "shocking world-wide fact, hidden historical secret, bizarre science phenomenon, or terrifying psychological reality. "
+        "Every single time you must choose a totally different and unique topic (do not repeat old or common themes). "
+        "Start with an intense psychological hook or mind-bending question in the first 3 seconds.\n\n"
         "Format your output strictly as follows:\n"
         "TITLE: [Catchy viral title with emojis #shorts]\n"
         "DESCRIPTION: [Engaging description optimized for viral reach, loaded with #shorts #facts #mystery #history #viral]\n"
@@ -55,7 +57,7 @@ def generate_viral_content():
             
             if response and response.text:
                 output = response.text.strip()
-                title = "Mysterious AI Fact #shorts"
+                title = "Shocking World Fact #shorts"
                 description = "#shorts #mystery #facts #viral"
                 script = output
                 
@@ -79,44 +81,33 @@ def generate_viral_content():
                 elif not script or len(script) < 10:
                     script = output
                     
-                print("-> Gemini script generated successfully!")
+                print("-> Unique dynamic viral script generated successfully!")
                 return title, description, script
                 
         except Exception as e:
             print(f"-> Gemini API key {idx+1} error: {str(e)}")
             time.sleep(1)
                     
-    print("-> All Gemini keys failed. Using fallback script.")
     return get_fallback_script()
 
 def get_fallback_script():
-    """Returns a random unique script from a diverse pool to prevent duplication."""
+    """Returns a random high-retention shocking fact script to ensure zero downtime."""
     fallback_topics = [
         (
-            "The Country With No Official Language 🇺🇸🤫 #shorts",
-            "Did you know the United States has no official national language? #shorts #facts #history #viral",
-            "Did you know that the United States does not actually have an official language at the federal level? "
-            "Despite English being widely spoken and used in government, the US Constitution and federal laws "
-            "have never declared any official national language. Individual states can choose their own, "
-            "but the entire country has no official tongue. "
-            "Subscribe for more mind-blowing historical secrets."
+            "The Bizarre Physics Secret of Time ⏳🌀 #shorts",
+            "Did you know time moves differently depending on where you are? #shorts #facts #science #viral",
+            "Did you know that you are actually aging slower right now if you live on the top floor of a building compared to the ground floor? "
+            "Because of Einstein's theory of general relativity, gravity weakens the further you get from Earth's center, "
+            "causing time to tick slightly faster at higher altitudes. "
+            "Subscribe for more mind-bending scientific secrets."
         ),
         (
-            "The Terrifying Glitch in Human Memory 🧠⚠️ #shorts",
-            "Have you ever experienced the Mandela effect? Here is the truth about your brain. #shorts #mystery #facts #viral",
-            "Did you know your brain is actively rewriting your memories every single day? "
-            "Scientists discovered that every time you recall a memory, you aren't remembering the original event—you are remembering the last time you thought about it. "
-            "This means a huge portion of what you believe happened in your past never actually occurred the way you remember it. "
-            "Subscribe for more dark psychological facts."
-        ),
-        (
-            "The Secret Deep Sea Anomaly Nobody Talks About 🌊⚓ #shorts",
-            "What is hiding at the bottom of the ocean? #shorts #mystery #ocean #viral",
-            "Did you know we know less about the deep ocean floor than we do about the surface of Mars? "
-            "More than eighty percent of our oceans remain completely unmapped and unexplored. "
-            "Deep beneath the crushing pressure, scientists frequently pick up unexplained acoustic anomalies and mysterious sounds "
-            "that modern science still cannot identify. What secrets are lurking in the dark abyss? "
-            "Subscribe for more unsolved mysteries."
+            "The Dark Reality of Deep Space Silence 🌌🔇 #shorts",
+            "What does space actually sound like? #shorts #space #mystery #viral",
+            "Did you know that space is not completely silent? NASA probes recorded eerie, terrifying electromagnetic vibrations "
+            "emanating from planets and black holes across the universe. If converted to sound waves, "
+            "the cosmic background hum sounds like whispers from the dark abyss. "
+            "Subscribe for more terrifying space facts."
         )
     ]
     return random.choice(fallback_topics)
