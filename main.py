@@ -259,7 +259,7 @@ def generate_content():
     ]
     keys = [k.strip() for k in keys if k and k.strip()]
     models = [m.strip() for m in os.environ.get(
-        "GEMINI_MODEL", "gemini-2.5-flash,gemini-2.0-flash").split(",") if m.strip()]
+        "GEMINI_MODEL", "gemini-2.5-flash,gemini-2.0-flash, gemini-3.8-flash").split(",") if m.strip()]
 
     history = load_history()
     mode = os.environ.get("VIDEO_MODE", "story").lower()   # story | facts | mix
