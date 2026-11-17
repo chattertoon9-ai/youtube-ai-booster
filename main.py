@@ -50,7 +50,7 @@ FPS = 30
 WORK = Path("work")
 HISTORY_FILE = Path("used_topics.json")
 VOICE = os.environ.get("TTS_VOICE", "en-US-ChristopherNeural")
-DRY_RUN = os.environ.get("DRY_RUN", "0") == "1"
+DRY_RUN = os.environ.get("DRY_RUN", "1") == "1"
 
 CATEGORIES = [
     "a disturbing historical secret most people never learned",
