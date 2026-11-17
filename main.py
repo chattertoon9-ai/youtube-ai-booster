@@ -167,6 +167,70 @@ def too_similar(title, history):
     return False
 
 
+STORY_TRUE = [
+    "a real person who survived something that should have been impossible",
+    "a real historical betrayal or conspiracy with a shocking twist",
+    "a real disappearance or case that is still unexplained",
+    "a real scientist or inventor whose discovery was ignored or stolen",
+    "a real spy, heist or escape that sounds like a movie",
+    "a real moment in history when the world almost ended by accident",
+    "a real ordinary person whose life changed in one strange day",
+]
+STORY_FICTION = [
+    "a short creepy mystery story with a chilling twist ending",
+    "a short sci-fi story where a tiny discovery changes everything",
+    "a short psychological thriller told in first person",
+    "a short urban-legend style story with an unexpected final line",
+]
+
+
+def build_story_prompt(kind, category, recent, focus):
+    recent_txt = "; ".join(recent[-25:]) if recent else "none"
+    if kind == "true":
+        truth = ("This must be a REAL, verifiable story. Use only facts you are certain about. "
+                 "If unsure about a name, date or number, leave it out or stay general. Never invent quotes.")
+    else:
+        truth = ("This is an ORIGINAL FICTIONAL story. Do not present it as real, do not use real people's names.")
+    return f"""
+You are a viral YouTube Shorts storyteller and YouTube SEO expert for a faceless
+"Mysterious AI" storytelling channel.
+
+Story type: {category}.
+Setting inspiration: {focus} (optional, only if it fits).
+Already used stories (never repeat or resemble): {recent_txt}
+{truth}
+
+STORY STRUCTURE (very important for retention)
+1. HOOK (scene 1, max 12 words): put the viewer in the middle of the danger/mystery. No greetings.
+2. SETUP (1-2 scenes): who, where, what is at stake, in the simplest words.
+3. ESCALATION (4-6 scenes): each scene must raise tension or reveal something new. Every scene ends
+   making the viewer want the next one.
+4. TWIST (1-2 scenes): the surprising turn or revelation.
+5. ENDING (last scene): a short, powerful line that echoes the hook so the Short loops, plus a question
+   inviting comments.
+
+STYLE
+- 10 to 14 scenes. Total narration 120-150 words. Each scene 1-2 sentences, max 16 words, simple spoken English.
+- Short sentences, vivid verbs, present or past tense consistently. No filler, no "in this video".
+- Each scene needs "search": 2-3 English words for a stock photo that fits visually
+  (concrete: "abandoned hospital", "snowy mountain", "old letter", "dark corridor").
+- title: max 60 chars, curiosity gap, one emoji, main keyword first, no hashtags.
+- description: 2-3 sentences with natural search keywords.
+- hashtags: 4 single-word hashtags without '#'.
+- tags: 12 SEO phrases people search on YouTube.
+- hook_text: max 5 words, ALL CAPS.
+- comment: one question that makes people argue or guess in the comments.
+- story_type: "true" or "fiction".
+
+Return ONLY valid JSON in this exact shape:
+{{
+  "title": "", "description": "", "hashtags": ["", "", "", ""], "tags": [""],
+  "hook_text": "", "comment": "", "story_type": "{kind}",
+  "scenes": [{{"narration": "", "search": ""}}]
+}}
+"""
+
+
 def get_fallback():
     return {
         "title": "You Age Slower on Top Floors? ⏳",
@@ -198,7 +262,17 @@ def generate_content():
         "GEMINI_MODEL", "gemini-2.5-flash,gemini-2.0-flash").split(",") if m.strip()]
 
     history = load_history()
-    prompt = build_prompt(random.choice(CATEGORIES), history, random.choice(FOCUS_SEEDS))
+    mode = os.environ.get("VIDEO_MODE", "story").lower()   # story | facts | mix
+    if mode == "mix":
+        mode = "story" if random.random() < 0.7 else "facts"
+    if mode == "story":
+        kind = "true" if random.random() < 0.7 else "fiction"
+        cat = random.choice(STORY_TRUE if kind == "true" else STORY_FICTION)
+        prompt = build_story_prompt(kind, cat, history, random.choice(FOCUS_SEEDS))
+        print(f"-> Mode: STORY ({kind})")
+    else:
+        prompt = build_prompt(random.choice(CATEGORIES), history, random.choice(FOCUS_SEEDS))
+        print("-> Mode: FACTS")
 
     for ki, key in enumerate(keys, 1):
         client = genai.Client(api_key=key)
@@ -548,8 +622,12 @@ def build_metadata(data):
             tags_line.append("#" + h)
     tags_line = tags_line[:6]
 
+    disclosure = ""
+    if data.get("story_type") == "fiction":
+        disclosure = "📖 This is an original fictional story made for entertainment.\n\n"
     description = (
         f"{data.get('description', '').strip()}\n\n"
+        f"{disclosure}"
         "🔔 A new mind-blowing mystery every day - follow Mysterious AI so you never miss one.\n"
         "💬 Comment your theory below!\n\n"
         + " ".join(tags_line)
