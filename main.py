@@ -67,6 +67,13 @@ CATEGORIES = [
     "a strange natural place on Earth that looks impossible",
 ]
 
+FOCUS_SEEDS = [
+    "ancient Egypt", "Medieval Europe", "Cold War", "Japan", "the Amazon", "the Arctic",
+    "Ancient Rome", "the Middle East", "the Pacific Ocean", "Victorian era", "Soviet Union",
+    "India", "Africa", "the Moon and Mars", "World War 2", "the human brain", "the Sahara",
+    "China", "South America", "the Bermuda region", "volcanoes", "caves", "insects", "viruses",
+]
+
 GENERIC_QUERIES = [
     "dark mystery", "ancient ruins", "night sky", "foggy forest",
     "old library", "ocean storm", "abandoned building", "galaxy",
@@ -111,13 +118,14 @@ def valid(data):
     )
 
 
-def build_prompt(category, recent):
+def build_prompt(category, recent, focus):
     recent_txt = "; ".join(recent[-25:]) if recent else "none"
     return f"""
 You are a viral YouTube Shorts scriptwriter and YouTube SEO expert for a faceless
 "Mysterious AI" facts & mysteries channel.
 
 Topic angle for THIS video: {category}.
+Strong preference: connect it to {focus} (skip this only if no true, verifiable fact exists).
 Already used topics (never repeat or closely resemble): {recent_txt}
 
 RULES
@@ -147,6 +155,16 @@ Return ONLY valid JSON in this exact shape:
   "scenes": [{{"narration": "", "search": ""}}]
 }}
 """
+
+
+def too_similar(title, history):
+    words = lambda t: set(re.findall(r"[a-z]{4,}", t.lower()))
+    a = words(title)
+    for old in history:
+        b = words(old)
+        if a and b and len(a & b) / len(a | b) >= 0.4:
+            return True
+    return False
 
 
 def get_fallback():
@@ -179,7 +197,8 @@ def generate_content():
     models = [m.strip() for m in os.environ.get(
         "GEMINI_MODEL", "gemini-2.5-flash,gemini-2.0-flash").split(",") if m.strip()]
 
-    prompt = build_prompt(random.choice(CATEGORIES), load_history())
+    history = load_history()
+    prompt = build_prompt(random.choice(CATEGORIES), history, random.choice(FOCUS_SEEDS))
 
     for ki, key in enumerate(keys, 1):
         client = genai.Client(api_key=key)
@@ -194,6 +213,9 @@ def generate_content():
                 )
                 data = parse_json(resp.text)
                 if valid(data):
+                    if too_similar(data["title"], history):
+                        print("   topic too similar to an old one, retrying...")
+                        continue
                     print("-> Script ready:", data["title"])
                     return data
                 print("   invalid structure, retrying...")
@@ -201,8 +223,10 @@ def generate_content():
                 print(f"   error: {str(e)[:200]}")
                 time.sleep(1)
 
-    print("-> Gemini failed everywhere, using fallback script.")
-    return get_fallback()
+    if os.environ.get("ALLOW_FALLBACK", "0") == "1":
+        print("-> Gemini failed, using fallback script.")
+        return get_fallback()
+    raise Exception("Gemini could not produce a NEW topic. Stopping so no duplicate video is uploaded.")
 
 
 # ----------------------------------------------------------------------------
