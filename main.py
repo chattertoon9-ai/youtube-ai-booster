@@ -259,7 +259,7 @@ def generate_content():
     ]
     keys = [k.strip() for k in keys if k and k.strip()]
     models = [m.strip() for m in os.environ.get(
-        "GEMINI_MODEL", "gemini-2.5-flash,gemini-2.0-flash, gemini-3.8-flash").split(",") if m.strip()]
+        "GEMINI_MODEL", "gemini-3.8-flash").split(",") if m.strip()]
 
     history = load_history()
     mode = os.environ.get("VIDEO_MODE", "story").lower()   # story | facts | mix
@@ -277,25 +277,35 @@ def generate_content():
     for ki, key in enumerate(keys, 1):
         client = genai.Client(api_key=key)
         for model in models:
-            try:
-                print(f"   key #{ki} / {model}")
-                resp = client.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json", temperature=1.0),
-                )
-                data = parse_json(resp.text)
-                if valid(data):
+            for attempt in range(1, 5):
+                try:
+                    print(f"   key #{ki} / {model} / try {attempt}")
+                    resp = client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json", temperature=1.0),
+                    )
+                    data = parse_json(resp.text)
+                    if not valid(data):
+                        print("   invalid structure, retrying...")
+                        continue
                     if too_similar(data["title"], history):
                         print("   topic too similar to an old one, retrying...")
                         continue
                     print("-> Script ready:", data["title"])
                     return data
-                print("   invalid structure, retrying...")
-            except Exception as e:
-                print(f"   error: {str(e)[:200]}")
-                time.sleep(1)
+                except Exception as e:
+                    msg = str(e)
+                    print(f"   error: {msg[:160]}")
+                    if "404" in msg or "NOT_FOUND" in msg:
+                        break  # wrong/retired model name, no point retrying
+                    if "503" in msg or "UNAVAILABLE" in msg or "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                        wait = 10 * attempt
+                        print(f"   Gemini busy, waiting {wait}s...")
+                        time.sleep(wait)
+                    else:
+                        time.sleep(2)
 
     if os.environ.get("ALLOW_FALLBACK", "0") == "1":
         print("-> Gemini failed, using fallback script.")
