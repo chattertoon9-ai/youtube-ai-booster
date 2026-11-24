@@ -2,13 +2,8 @@ import os
 from google import genai
 
 # Aapki maujooda 6 keys ko environment variables se fetch karna
-api_keys = [
-    os.getenv("GEMINI_API_KEY"),
-    os.getenv("GEMINI_API_KEY_2"),
-    os.getenv("GEMINI_API_KEY_3"),
-    os.getenv("GEMINI_API_KEY_4"),
-    os.getenv("GEMINI_API_KEY_5"),
-    os.getenv("GEMINI_API_KEY_6"),
+api_keys = [os.getenv("GEMINI_API_KEY")] + [
+    os.getenv(f"GEMINI_API_KEY_{i}") for i in range(2, 16)
 ]
 
 # Agar koi secret khali/missing ho toh usey list se nikal dena

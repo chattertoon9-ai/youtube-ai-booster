@@ -282,7 +282,7 @@ def get_fallback():
 def generate_content():
     print(f"{elapsed()} -> Step 1: Generating viral script with Gemini...")
     keys = [os.environ.get("GEMINI_API_KEY", "")] + [
-        os.environ.get(f"GEMINI_API_KEY_{i}", "") for i in range(2, 7)
+        os.environ.get(f"GEMINI_API_KEY_{i}", "") for i in range(2, 16)
     ]
     keys = [k.strip() for k in keys if k and k.strip()]
     models = [m.strip() for m in os.environ.get(
