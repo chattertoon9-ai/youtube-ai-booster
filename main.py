@@ -331,8 +331,12 @@ def generate_content():
                     print(f"   error: {msg[:160]}")
                     if "404" in msg or "NOT_FOUND" in msg:
                         break  # wrong/retired model name, no point retrying
-                    if "503" in msg or "UNAVAILABLE" in msg or "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                        wait = 10 * attempt
+                    if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                        # quota is gone, waiting will not bring it back -> next model/key
+                        print("   quota exhausted, switching to next model/key")
+                        break
+                    if "503" in msg or "UNAVAILABLE" in msg:
+                        wait = 5 * attempt
                         print(f"   Gemini busy, waiting {wait}s...")
                         time.sleep(wait)
                     else:
