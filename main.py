@@ -1,14 +1,21 @@
 """
-Mysterious AI - Cinematic YouTube Shorts Auto Pipeline (v2)
+Mysterious AI - Cinematic YouTube Shorts Auto Pipeline (v2.1 - fast + no-hang)
 
 Flow:
- 1. Gemini  -> JSON (title, SEO description, tags, hook, 6-8 scenes with image keywords)
- 2. Pixabay -> one relevant image PER scene (not one image for the whole video)
- 3. Edge-TTS (neural voice, gTTS fallback) -> one voice clip per scene (perfect sync)
+ 1. Gemini  -> JSON (title, SEO description, tags, hook, scenes with image keywords)
+ 2. Pixabay -> one relevant image PER scene
+ 3. Edge-TTS (neural voice, gTTS fallback) -> one voice clip per scene
  4. Cinematic Ken-Burns zoom/pan + vignette + color grade + dip transitions
  5. Word-by-word style captions (3 words at a time, big, yellow/white, outlined)
  6. Generated dark ambient drone + heartbeat music (no download needed)
  7. Upload to YouTube with SEO title/description/hashtags/tags + engagement comment
+
+v2.1 changes:
+ - Every network call has a timeout (Gemini, edge-tts, gTTS) so the job can't hang.
+ - Lighter render (24 fps, smaller oversized canvas, ultrafast preset).
+ - Progress bar + timing logs, flushed instantly (visible live in GitHub Actions).
+ - Hard time budget (MAX_RUNTIME_MIN) so the pipeline fails with a clear message
+   instead of being cancelled silently.
 """
 
 import os
@@ -19,8 +26,12 @@ import random
 import asyncio
 import shutil
 import wave
+import functools
 import traceback
 from pathlib import Path
+
+# flush every print immediately so GitHub Actions shows logs live
+print = functools.partial(print, flush=True)
 
 import numpy as np
 import requests
@@ -45,12 +56,28 @@ from moviepy import (
 # Settings
 # ----------------------------------------------------------------------------
 W, H = 1080, 1920
-BASE_W, BASE_H = int(W * 1.3), int(H * 1.3)  # oversized image so we can zoom/pan
-FPS = 30
+ZOOM = 1.2                                   # max zoom; also oversize factor of the base image
+BASE_W, BASE_H = int(W * ZOOM), int(H * ZOOM)  # oversized image so we can zoom/pan
+FPS = 24
 WORK = Path("work")
 HISTORY_FILE = Path("used_topics.json")
 VOICE = os.environ.get("TTS_VOICE", "en-US-ChristopherNeural")
 DRY_RUN = os.environ.get("DRY_RUN", "1") == "1"
+
+TTS_TIMEOUT = 40          # seconds for one edge-tts call
+GEMINI_TIMEOUT_MS = 60000  # 60 seconds per Gemini request
+MAX_RUNTIME_MIN = int(os.environ.get("MAX_RUNTIME_MIN", "40"))
+START_TIME = time.time()
+
+
+def elapsed():
+    return f"[{(time.time() - START_TIME) / 60:.1f} min]"
+
+
+def check_budget(stage):
+    if time.time() - START_TIME > MAX_RUNTIME_MIN * 60:
+        raise TimeoutError(f"Time budget of {MAX_RUNTIME_MIN} min exceeded during: {stage}")
+
 
 CATEGORIES = [
     "a disturbing historical secret most people never learned",
@@ -253,7 +280,7 @@ def get_fallback():
 
 
 def generate_content():
-    print("-> Step 1: Generating viral script with Gemini...")
+    print(f"{elapsed()} -> Step 1: Generating viral script with Gemini...")
     keys = [os.environ.get("GEMINI_API_KEY", "")] + [
         os.environ.get(f"GEMINI_API_KEY_{i}", "") for i in range(2, 7)
     ]
@@ -275,9 +302,13 @@ def generate_content():
         print("-> Mode: FACTS")
 
     for ki, key in enumerate(keys, 1):
-        client = genai.Client(api_key=key)
+        client = genai.Client(
+            api_key=key,
+            http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS),
+        )
         for model in models:
             for attempt in range(1, 5):
+                check_budget("Gemini")
                 try:
                     print(f"   key #{ki} / {model} / try {attempt}")
                     resp = client.models.generate_content(
@@ -293,7 +324,7 @@ def generate_content():
                     if too_similar(data["title"], history):
                         print("   topic too similar to an old one, retrying...")
                         continue
-                    print("-> Script ready:", data["title"])
+                    print(f"{elapsed()} -> Script ready:", data["title"])
                     return data
                 except Exception as e:
                     msg = str(e)
@@ -395,9 +426,9 @@ def prepare_image(path):
 
 
 def kenburns_clip(base, duration, idx):
-    """3D-feeling camera move: eased zoom + pan, with a quick dip at the cuts."""
+    """Camera move: eased zoom + pan, with a quick dip at the cuts."""
     mode = idx % 4
-    z0, z1 = (1.0, 1.3) if mode in (0, 2) else (1.3, 1.0)
+    z0, z1 = (1.0, ZOOM) if mode in (0, 2) else (ZOOM, 1.0)
     pan_x, pan_y = [(0, -1), (1, 0), (0, 1), (-1, 0)][mode]
 
     def frame(t):
@@ -410,7 +441,7 @@ def kenburns_clip(base, duration, idx):
         ox = mx / 2 + pan_x * (mx / 2) * (2 * p - 1) * 0.9
         oy = my / 2 + pan_y * (my / 2) * (2 * p - 1) * 0.9
         box = (ox, oy, ox + vw, oy + vh)
-        fr = np.asarray(base.resize((W, H), Image.BICUBIC, box=box))
+        fr = np.asarray(base.resize((W, H), Image.BILINEAR, box=box))
         f = min(1.0, t / 0.12, max(duration - t, 0) / 0.12)
         if f < 1.0:
             fr = (fr * (0.15 + 0.85 * f)).astype(np.uint8)
@@ -424,17 +455,23 @@ def kenburns_clip(base, duration, idx):
 # ----------------------------------------------------------------------------
 async def _edge_tts(text, path):
     import edge_tts
-    await edge_tts.Communicate(text, VOICE, rate="+6%", pitch="-3Hz").save(path)
+    comm = edge_tts.Communicate(text, VOICE, rate="+6%", pitch="-3Hz")
+    # hard timeout: edge-tts can silently hang on CI runners
+    await asyncio.wait_for(comm.save(path), timeout=TTS_TIMEOUT)
 
 
 def make_voice(text, path):
     try:
         asyncio.run(_edge_tts(text, path))
-        if os.path.getsize(path) > 1000:
+        if os.path.exists(path) and os.path.getsize(path) > 1000:
             return
     except Exception as e:
-        print(f"   edge-tts failed ({str(e)[:100]}), using gTTS")
-    gTTS(text=text, lang="en", slow=False).save(path)
+        print(f"   edge-tts failed ({type(e).__name__}: {str(e)[:100]}), using gTTS")
+    try:
+        gTTS(text=text, lang="en", slow=False, timeout=30).save(path)
+    except TypeError:
+        # very old gTTS without the timeout argument
+        gTTS(text=text, lang="en", slow=False).save(path)
 
 
 # ----------------------------------------------------------------------------
@@ -502,6 +539,7 @@ def render_text_png(text, path, color, size=92, stroke=8, height=340, max_width=
         if bbox[2] - bbox[0] <= max_width:
             break
         size -= 6
+    font = load_font(size)
     img = Image.new("RGBA", (W, height), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     bbox = d.textbbox((0, 0), text, font=font, stroke_width=stroke)
@@ -521,6 +559,7 @@ def render_hook_png(text, path):
         if bbox[2] - bbox[0] <= 880:
             break
         size -= 4
+    font = load_font(size)
     bbox = tmp.textbbox((0, 0), text, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     img = Image.new("RGBA", (W, 240), (0, 0, 0, 0))
@@ -545,8 +584,10 @@ def build_video(data, out_file="output.mp4"):
     t = 0.0
 
     for i, sc in enumerate(scenes):
+        check_budget(f"scene {i + 1}")
+        s0 = time.time()
         narration = sc["narration"].strip()
-        print(f"-> Scene {i + 1}/{len(scenes)}: {narration[:60]}...")
+        print(f"{elapsed()} -> Scene {i + 1}/{len(scenes)}: {narration[:60]}...")
 
         apath = WORK / f"voice_{i}.mp3"
         make_voice(narration, str(apath))
@@ -582,6 +623,7 @@ def build_video(data, out_file="output.mp4"):
                 ImageClip(str(hpng)).with_start(0).with_duration(min(3.0, dur)).with_position(("center", 250))
             )
         t += dur
+        print(f"   scene prepared in {time.time() - s0:.1f}s")
 
     total = t + 0.3
 
@@ -597,18 +639,21 @@ def build_video(data, out_file="output.mp4"):
     video = CompositeVideoClip(visual_clips + caption_clips, size=(W, H)).with_duration(total)
     video = video.with_audio(final_audio)
 
-    print(f"-> Rendering {total:.1f}s video...")
+    check_budget("before render")
+    print(f"{elapsed()} -> Rendering {total:.1f}s video ({int(total * FPS)} frames)...")
+    r0 = time.time()
     video.write_videofile(
         out_file,
         fps=FPS,
         codec="libx264",
         audio_codec="aac",
         audio_bitrate="192k",
-        preset="veryfast",
-        threads=4,
-        ffmpeg_params=["-crf", "21", "-pix_fmt", "yuv420p"],
-        logger=None,
+        preset="ultrafast",
+        threads=os.cpu_count() or 2,
+        ffmpeg_params=["-crf", "23", "-pix_fmt", "yuv420p"],
+        logger="bar",
     )
+    print(f"\n{elapsed()} -> Render finished in {(time.time() - r0) / 60:.1f} min")
 
     video.close()
     shutil.rmtree(WORK, ignore_errors=True)
@@ -653,7 +698,7 @@ def build_metadata(data):
 
 
 def upload_to_youtube(video_path, data):
-    print("-> Connecting to YouTube API...")
+    print(f"{elapsed()} -> Connecting to YouTube API...")
     cid = os.environ.get("YOUTUBE_CLIENT_ID")
     secret = os.environ.get("YOUTUBE_CLIENT_SECRET")
     refresh = os.environ.get("YOUTUBE_REFRESH_TOKEN") or os.environ.get("YOUTUBE_REFRESH_TEKEN")
@@ -720,7 +765,7 @@ def upload_to_youtube(video_path, data):
 # Main
 # ----------------------------------------------------------------------------
 if __name__ == "__main__":
-    print("=== Mysterious AI Cinematic Pipeline v2 ===")
+    print("=== Mysterious AI Cinematic Pipeline v2.1 ===")
     try:
         content = generate_content()
         video = build_video(content, "output.mp4")
@@ -732,6 +777,7 @@ if __name__ == "__main__":
             save_history(content["title"])
             os.remove(video)
             print("=== Video generated and uploaded successfully! ===")
+        print(f"{elapsed()} Done.")
     except Exception as e:
         print(f"Pipeline Critical Error: {e}")
         traceback.print_exc()
