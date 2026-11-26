@@ -1,7 +1,6 @@
-google-genai
 google-generativeai
+requests
 google-api-python-client
+google-auth
 google-auth-oauthlib
 google-auth-httplib2
-gtts
-moviepy==1.0.3
