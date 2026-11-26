@@ -9,12 +9,22 @@ from difflib import SequenceMatcher
 import google.generativeai as genai
 
 # ---------------- CONFIG ----------------
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 MODEL_NAME = "gemini-2.0-flash"
 HISTORY_FILE = "used_topics.json"
 MAX_RETRIES = 8            # kitni baar naya topic try karna hai
 HISTORY_IN_PROMPT = 40     # prompt mein sirf last 40 topics bhejo
 SIMILARITY_LIMIT = 0.75    # isse zyada similar = duplicate
+
+# GEMINI_API_KEY_1 ... GEMINI_API_KEY_15 (jo set hain wahi use honge)
+API_KEYS = [
+    os.environ[f"GEMINI_API_KEY_{i}"]
+    for i in range(1, 16)
+    if os.environ.get(f"GEMINI_API_KEY_{i}")
+]
+if os.environ.get("GEMINI_API_KEY"):
+    API_KEYS.append(os.environ["GEMINI_API_KEY"])
+if not API_KEYS:
+    raise RuntimeError("Koi GEMINI_API_KEY_* environment variable set nahi hai.")
 
 CATEGORIES = [
     "AI tools", "productivity", "money saving", "tech tips",
@@ -35,8 +45,6 @@ BACKUP_TOPICS = [
     "How to build a daily routine that sticks",
     "Simple tricks to focus without distractions",
 ]
-
-genai.configure(api_key=GEMINI_API_KEY)
 
 
 # ---------------- HISTORY ----------------
@@ -71,20 +79,33 @@ def is_duplicate(topic, history):
     return False
 
 
-# ---------------- GEMINI ----------------
+# ---------------- GEMINI (key rotation) ----------------
 def ask_gemini(prompt, temperature=1.1):
-    model = genai.GenerativeModel(
-        MODEL_NAME,
-        generation_config={
-            "temperature": temperature,
-            "top_p": 0.95,
-            "response_mime_type": "application/json",
-        },
-    )
-    response = model.generate_content(prompt)
-    text = response.text.strip()
-    text = re.sub(r"^```json|```$", "", text, flags=re.MULTILINE).strip()
-    return json.loads(text)
+    """Keys ko shuffle karke ek-ek try karta hai. Quota/error par agli key."""
+    keys = API_KEYS[:]
+    random.shuffle(keys)
+    last_err = None
+
+    for key in keys:
+        try:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel(
+                MODEL_NAME,
+                generation_config={
+                    "temperature": temperature,
+                    "top_p": 0.95,
+                    "response_mime_type": "application/json",
+                },
+            )
+            text = model.generate_content(prompt).text.strip()
+            text = re.sub(r"^```json|```$", "", text, flags=re.MULTILINE).strip()
+            return json.loads(text)
+        except Exception as e:
+            last_err = e
+            print(f"[WARN] Key fail ({str(e)[:80]}), agli key try kar raha hoon...")
+            continue
+
+    raise Exception(f"All Gemini keys failed: {last_err}")
 
 
 def build_prompt(history):
@@ -139,7 +160,6 @@ def generate_content():
     # Step 1: Gemini se naya topic lene ki koshish (retry loop)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # har retry mein temperature thoda badhta hai (max 1.5)
             temp = min(1.0 + attempt * 0.07, 1.5)
             result = ask_gemini(build_prompt(history), temperature=temp)
             topic = result.get("topic", "").strip()
