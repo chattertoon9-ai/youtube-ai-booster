@@ -1,44 +1,40 @@
-name: Cinematic AI Shorts Auto Pipeline
+name: Auto Pipeline
 
 on:
   schedule:
-    - cron: '0 13 * * *'
-    - cron: '0 17 * * *'
-    - cron: '0 23 * * *'
+    - cron: "0 6 * * *"      # roz 6:00 UTC (time apne hisaab se badlo)
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Sirf video banao, upload mat karo (test)'
-        type: boolean
-        default: false
 
 permissions:
-  contents: write
+  contents: write            # used_topics.json commit karne ke liye
 
 concurrency:
-  group: shorts-pipeline
+  group: auto-pipeline
   cancel-in-progress: false
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
     timeout-minutes: 50
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: "pip"
 
-      - name: Install Dependencies
-        run: python -m pip install --upgrade pip && pip install google-genai google-api-python-client google-auth requests Pillow numpy moviepy==2.1.2 edge-tts gTTS
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Execute Mysterious AI Auto Pipeline
+      - name: Run pipeline
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
@@ -56,18 +52,22 @@ jobs:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN || secrets.YOUTUBE_REFRESH_TEKEN }}
-          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
-          MAX_RUNTIME_MIN: '40'
-        run: python -u main.py
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          DRY_RUN: "0"
+          MAX_RUNTIME_MIN: "40"
+        run: python main.py
 
-      - name: Save test video (dry run only)
-        if: ${{ inputs.dry_run }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: preview-video
-          path: output.mp4
-
-      - name: Save used topics
-        if: ${{ success() && !inputs.dry_run }}
-        run: git config user.name "github-actions[bot]" && git config user.email "41898282+github-actions[bot]@users.noreply.github.com" && git add used_topics.json && (git diff --cached --quiet || (git commit -m "update used topics" && git push))
+      # History hamesha save ho (run fail ho tab bhi), taaki duplicate na aaye
+      - name: Commit topic history
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add used_topics.json || true
+          if git diff --cached --quiet; then
+            echo "No history changes."
+          else
+            git commit -m "Update used topics history [skip ci]"
+            git pull --rebase origin ${{ github.ref_name }} || true
+            git push
+          fi
