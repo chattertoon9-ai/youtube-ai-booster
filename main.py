@@ -5,15 +5,28 @@ import re
 import time
 from datetime import datetime
 from difflib import SequenceMatcher
+from zoneinfo import ZoneInfo
 
 import google.generativeai as genai
 
 # ---------------- CONFIG ----------------
-MODEL_NAME = "gemini-3.8-flash"
+# Models ki list (priority order). Pehla fail/quota khatam to agla use hoga.
+# Env me GEMINI_MODELS="model1,model2,model3" set karke bhi badal sakte ho.
+MODELS = [
+    m.strip()
+    for m in os.environ.get(
+        "GEMINI_MODELS",
+        "gemini-3.8-flash,gemini-2.5-flash,gemini-2.5-flash-lite",
+    ).split(",")
+    if m.strip()
+]
+
 HISTORY_FILE = "used_topics.json"
-MAX_RETRIES = 8            # kitni baar naya topic try karna hai
-HISTORY_IN_PROMPT = 40     # prompt mein sirf last 40 topics bhejo
-SIMILARITY_LIMIT = 0.75    # isse zyada similar = duplicate
+QUOTA_FILE = "quota_state.json"   # aaj kaunsi (key, model) exhausted hai
+MAX_RETRIES = 4            # naya topic kitni baar try karna hai (pehle 8 tha)
+MINUTE_RETRIES = 2         # per-minute 429 par kitni baar wait+retry
+HISTORY_IN_PROMPT = 40
+SIMILARITY_LIMIT = 0.75
 
 # GEMINI_API_KEY_1 ... GEMINI_API_KEY_15 (jo set hain wahi use honge)
 API_KEYS = [
@@ -23,6 +36,7 @@ API_KEYS = [
 ]
 if os.environ.get("GEMINI_API_KEY"):
     API_KEYS.append(os.environ["GEMINI_API_KEY"])
+API_KEYS = list(dict.fromkeys(API_KEYS))  # duplicate keys hatao
 if not API_KEYS:
     raise RuntimeError("Koi GEMINI_API_KEY_* environment variable set nahi hai.")
 
@@ -32,7 +46,6 @@ CATEGORIES = [
     "smartphone tricks", "career growth", "free software", "life hacks",
 ]
 
-# Gemini fail ho jaye to ye backup topics use honge
 BACKUP_TOPICS = [
     "5 free AI tools that save 3 hours daily",
     "How to use ChatGPT for studying faster",
@@ -45,6 +58,10 @@ BACKUP_TOPICS = [
     "How to build a daily routine that sticks",
     "Simple tricks to focus without distractions",
 ]
+
+
+class QuotaExhausted(Exception):
+    """Sab keys/models ka daily quota khatam."""
 
 
 # ---------------- HISTORY ----------------
@@ -79,33 +96,124 @@ def is_duplicate(topic, history):
     return False
 
 
-# ---------------- GEMINI (key rotation) ----------------
+# ---------------- QUOTA TRACKING ----------------
+# Google ka daily quota Pacific time midnight pe reset hota hai
+PT = ZoneInfo("America/Los_Angeles")
+
+
+def _today():
+    return datetime.now(PT).strftime("%Y-%m-%d")
+
+
+def _load_quota():
+    try:
+        with open(QUOTA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("date") == _today():
+            return data
+    except Exception:
+        pass
+    return {"date": _today(), "exhausted": []}
+
+
+_quota = _load_quota()
+
+
+def _pair(key, model):
+    return f"{key[-6:]}|{model}"
+
+
+def is_exhausted(key, model):
+    return _pair(key, model) in _quota["exhausted"]
+
+
+def mark_exhausted(key, model):
+    p = _pair(key, model)
+    if p not in _quota["exhausted"]:
+        _quota["exhausted"].append(p)
+        try:
+            with open(QUOTA_FILE, "w", encoding="utf-8") as f:
+                json.dump(_quota, f)
+        except Exception:
+            pass
+
+
+def all_exhausted():
+    return all(is_exhausted(k, m) for m in MODELS for k in API_KEYS)
+
+
+def _wait_time(msg, default):
+    m = re.search(r"retry in ([\d.]+)s", msg) or re.search(r"seconds:\s*(\d+)", msg)
+    return min(float(m.group(1)) + 1, 60) if m else default
+
+
+# ---------------- GEMINI (key rotation + model fallback) ----------------
 def ask_gemini(prompt, temperature=1.1):
-    """Keys ko shuffle karke ek-ek try karta hai. Quota/error par agli key."""
+    """
+    Har model ke liye saari keys try karta hai.
+    - PerDay quota error  -> (key, model) ko aaj ke liye band, agla try
+    - Per-minute 429      -> thoda wait karke same key pe retry
+    - Bad JSON / 5xx      -> agla try
+    - Sab quota khatam    -> QuotaExhausted
+    """
     keys = API_KEYS[:]
     random.shuffle(keys)
     last_err = None
 
-    for key in keys:
-        try:
-            genai.configure(api_key=key)
-            model = genai.GenerativeModel(
-                MODEL_NAME,
-                generation_config={
-                    "temperature": temperature,
-                    "top_p": 0.95,
-                    "response_mime_type": "application/json",
-                },
-            )
-            text = model.generate_content(prompt).text.strip()
-            text = re.sub(r"^```json|```$", "", text, flags=re.MULTILINE).strip()
-            return json.loads(text)
-        except Exception as e:
-            last_err = e
-            print(f"[WARN] Key fail ({str(e)[:80]}), agli key try kar raha hoon...")
-            continue
+    for model_name in MODELS:
+        for key in keys:
+            if is_exhausted(key, model_name):
+                continue
 
-    raise Exception(f"All Gemini keys failed: {last_err}")
+            for attempt in range(MINUTE_RETRIES + 1):
+                try:
+                    genai.configure(api_key=key)
+                    model = genai.GenerativeModel(
+                        model_name,
+                        generation_config={
+                            "temperature": temperature,
+                            "top_p": 0.95,
+                            "response_mime_type": "application/json",
+                        },
+                    )
+                    text = model.generate_content(prompt).text.strip()
+                    text = re.sub(r"^```json|```$", "", text, flags=re.MULTILINE).strip()
+                    return json.loads(text)
+
+                except json.JSONDecodeError as e:
+                    last_err = e
+                    print("[WARN] Gemini ne invalid JSON diya, agla try...")
+                    break
+
+                except Exception as e:
+                    last_err = e
+                    msg = str(e)
+                    is_429 = "429" in msg or "ResourceExhausted" in type(e).__name__
+
+                    if is_429 and "PerDay" in msg:
+                        mark_exhausted(key, model_name)
+                        print(f"[QUOTA] Daily khatam: ...{key[-6:]} / {model_name}")
+                        break
+
+                    if is_429 and attempt < MINUTE_RETRIES:
+                        wait = _wait_time(msg, 5 * 2 ** attempt)
+                        print(f"[429] Per-minute limit, {wait:.0f}s wait...")
+                        time.sleep(wait)
+                        continue
+
+                    if "404" in msg or "not found" in msg.lower():
+                        print(f"[SKIP] Model available nahi: {model_name}")
+                        break
+
+                    print(f"[WARN] {model_name} fail ({msg[:80]}), agla try...")
+                    break
+
+    if all_exhausted():
+        raise QuotaExhausted(
+            "Sab keys aur models ka daily quota khatam. "
+            "Naya project key banao / billing on karo / kal tak ruko."
+        )
+    raise Exception(f"All Gemini attempts failed: {last_err}")
 
 
 def build_prompt(history):
@@ -157,7 +265,7 @@ def generate_content():
     history = load_history()
     content = None
 
-    # Step 1: Gemini se naya topic lene ki koshish (retry loop)
+    # Step 1: Gemini se naya topic (retry loop)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             temp = min(1.0 + attempt * 0.07, 1.5)
@@ -170,11 +278,14 @@ def generate_content():
                 break
 
             print(f"[Retry {attempt}/{MAX_RETRIES}] Duplicate/empty topic: {topic!r}")
+        except QuotaExhausted:
+            # Quota khatam hai, retry ka koi faayda nahi
+            raise
         except Exception as e:
             print(f"[Retry {attempt}/{MAX_RETRIES}] Gemini error: {e}")
         time.sleep(2)
 
-    # Step 2: Fallback - backup topics list
+    # Step 2: Fallback - backup topics
     if content is None:
         print("[WARN] Gemini naya topic nahi de paya, backup list try kar raha hoon...")
         unused = [t for t in BACKUP_TOPICS if not is_duplicate(t, history)]
@@ -184,17 +295,19 @@ def generate_content():
                 content = make_content_from_topic(topic)
                 print(f"[OK] Backup topic use hua: {topic}")
                 break
+            except QuotaExhausted:
+                raise
             except Exception as e:
                 print(f"[WARN] Backup topic fail: {e}")
 
-    # Step 3: Sab fail hone par hi exception
+    # Step 3: Sab fail
     if content is None:
         raise Exception(
             "No new topic available (Gemini + backup topics dono khatam). "
             "BACKUP_TOPICS mein aur topics add karo ya used_topics.json purana clear karo."
         )
 
-    # Step 4: History mein save karo
+    # Step 4: History save
     history.append(content["topic"])
     save_history(history)
     return content
