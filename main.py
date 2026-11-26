@@ -9,7 +9,7 @@ from difflib import SequenceMatcher
 import google.generativeai as genai
 
 # ---------------- CONFIG ----------------
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-3.8-flash"
 HISTORY_FILE = "used_topics.json"
 MAX_RETRIES = 8            # kitni baar naya topic try karna hai
 HISTORY_IN_PROMPT = 40     # prompt mein sirf last 40 topics bhejo
