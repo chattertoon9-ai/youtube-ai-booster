@@ -36,6 +36,12 @@ jobs:
       - name: Install Python packages
         run: pip install -r requirements.txt
 
+      - name: Check repository files
+        run: |
+          pwd
+          ls -la
+          find . -maxdepth 4 -not -path '*/.*'
+
       - name: Execute Mysterious AI Auto Pipeline
         env:
           PYTHONPATH: "."
