@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import random
 import re
@@ -11,22 +12,24 @@ import google.generativeai as genai
 
 # ---------------- CONFIG ----------------
 # Models ki list (priority order). Pehla fail/quota khatam to agla use hoga.
-# Env me GEMINI_MODELS="model1,model2,model3" set karke bhi badal sakte ho.
+# Env me GEMINI_MODELS="model1,model2" set karke bhi badal sakte ho.
 MODELS = [
     m.strip()
     for m in os.environ.get(
         "GEMINI_MODELS",
-        "gemini-3.8-flash,gemini-2.5-flash,gemini-2.5-flash-lite",
+        "gemini-2.5-flash,gemini-2.5-flash-lite",
     ).split(",")
     if m.strip()
 ]
 
 HISTORY_FILE = "used_topics.json"
 QUOTA_FILE = "quota_state.json"   # aaj kaunsi (key, model) exhausted hai
-MAX_RETRIES = 4            # naya topic kitni baar try karna hai (pehle 8 tha)
+MAX_RETRIES = 4            # naya topic kitni baar try karna hai
 MINUTE_RETRIES = 2         # per-minute 429 par kitni baar wait+retry
+REQUEST_TIMEOUT = 60       # seconds - Gemini call atak jaye to workflow hang na ho
 HISTORY_IN_PROMPT = 40
 SIMILARITY_LIMIT = 0.75
+REQUIRED_KEYS = ("topic", "title", "script", "description", "tags")
 
 # GEMINI_API_KEY_1 ... GEMINI_API_KEY_15 (jo set hain wahi use honge)
 API_KEYS = [
@@ -79,6 +82,14 @@ def load_history():
 def save_history(history):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+def mark_topic_used(topic):
+    """Video upload SUCCESS hone ke baad ye call karo."""
+    history = load_history()
+    if topic not in history:
+        history.append(topic)
+        save_history(history)
 
 
 def normalize(text):
@@ -147,6 +158,20 @@ def _wait_time(msg, default):
     return min(float(m.group(1)) + 1, 60) if m else default
 
 
+def _clean_result(data):
+    """Gemini kabhi list deta hai ya keys miss kar deta hai - yahan theek karo."""
+    if isinstance(data, list) and data:
+        data = data[0]
+    if not isinstance(data, dict):
+        raise ValueError("Gemini response dict nahi hai")
+    missing = [k for k in REQUIRED_KEYS if k not in data]
+    if missing:
+        raise ValueError(f"Gemini response me keys missing: {missing}")
+    if not isinstance(data["tags"], list):
+        data["tags"] = [t.strip() for t in str(data["tags"]).split(",") if t.strip()]
+    return data
+
+
 # ---------------- GEMINI (key rotation + model fallback) ----------------
 def ask_gemini(prompt, temperature=1.1):
     """
@@ -176,13 +201,17 @@ def ask_gemini(prompt, temperature=1.1):
                             "response_mime_type": "application/json",
                         },
                     )
-                    text = model.generate_content(prompt).text.strip()
+                    response = model.generate_content(
+                        prompt,
+                        request_options={"timeout": REQUEST_TIMEOUT},
+                    )
+                    text = response.text.strip()
                     text = re.sub(r"^```json|```$", "", text, flags=re.MULTILINE).strip()
-                    return json.loads(text)
+                    return _clean_result(json.loads(text))
 
-                except json.JSONDecodeError as e:
+                except (json.JSONDecodeError, ValueError) as e:
                     last_err = e
-                    print("[WARN] Gemini ne invalid JSON diya, agla try...")
+                    print(f"[WARN] Gemini ka response sahi nahi ({e}), agla try...")
                     break
 
                 except Exception as e:
@@ -203,10 +232,19 @@ def ask_gemini(prompt, temperature=1.1):
 
                     if "404" in msg or "not found" in msg.lower():
                         print(f"[SKIP] Model available nahi: {model_name}")
+                        # is model ki baaki keys try karna bekar hai
                         break
 
                     print(f"[WARN] {model_name} fail ({msg[:80]}), agla try...")
                     break
+            else:
+                continue
+
+            # 404 par poora model skip karo
+            if last_err is not None and (
+                "404" in str(last_err) or "not found" in str(last_err).lower()
+            ):
+                break
 
     if all_exhausted():
         raise QuotaExhausted(
@@ -250,7 +288,7 @@ def make_content_from_topic(topic):
 Create a YouTube Shorts package for this topic: "{topic}"
 Return ONLY valid JSON:
 {{
-  "topic": "{topic}",
+  "topic": {json.dumps(topic)},
   "title": "catchy title under 70 characters",
   "script": "engaging 100-130 word voiceover script",
   "description": "short description with 3 hashtags",
@@ -261,7 +299,12 @@ Return ONLY valid JSON:
 
 
 # ---------------- MAIN FUNCTION ----------------
-def generate_content():
+def generate_content(save=True):
+    """
+    save=True  -> purana behaviour: topic turant history me save (main.py ko badalna nahi padega).
+    save=False -> topic save nahi hoga. Upload SUCCESS ke baad
+                  mark_topic_used(content["topic"]) call karo (recommended).
+    """
     history = load_history()
     content = None
 
@@ -270,7 +313,7 @@ def generate_content():
         try:
             temp = min(1.0 + attempt * 0.07, 1.5)
             result = ask_gemini(build_prompt(history), temperature=temp)
-            topic = result.get("topic", "").strip()
+            topic = str(result.get("topic", "")).strip()
 
             if topic and not is_duplicate(topic, history):
                 content = result
@@ -279,7 +322,6 @@ def generate_content():
 
             print(f"[Retry {attempt}/{MAX_RETRIES}] Duplicate/empty topic: {topic!r}")
         except QuotaExhausted:
-            # Quota khatam hai, retry ka koi faayda nahi
             raise
         except Exception as e:
             print(f"[Retry {attempt}/{MAX_RETRIES}] Gemini error: {e}")
@@ -307,11 +349,16 @@ def generate_content():
             "BACKUP_TOPICS mein aur topics add karo ya used_topics.json purana clear karo."
         )
 
-    # Step 4: History save
-    history.append(content["topic"])
-    save_history(history)
+    # Step 4: History save (sirf agar save=True)
+    if save:
+        history.append(content["topic"])
+        save_history(history)
     return content
 
 
 if __name__ == "__main__":
-    print(json.dumps(generate_content(), indent=2, ensure_ascii=False))
+    try:
+        print(json.dumps(generate_content(save=False), indent=2, ensure_ascii=False))
+    except QuotaExhausted as e:
+        print(f"[FATAL] {e}")
+        sys.exit(1)  # workflow red dikhe, green nahi
