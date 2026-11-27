@@ -10,9 +10,11 @@ import requests
 BASE_DIR = Path(__file__).resolve().parent
 USED_TOPICS_FILE = BASE_DIR / "used_topics.json"
 
-DEFAULT_MODELS = [
+FALLBACK_MODELS = [
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
 ]
 
 
@@ -32,12 +34,64 @@ def _get_api_keys() -> list[str]:
     return keys
 
 
-def _get_models() -> list[str]:
+def _normalize_model_name(name: str) -> str:
+    cleaned = name.strip()
+    if cleaned.startswith("models/"):
+        cleaned = cleaned[len("models/") :]
+    return cleaned
+
+
+def _discover_models(api_key: str) -> list[tuple[str, str]]:
+    """Query ListModels on v1beta and v1 to find models supporting generateContent."""
+    discovered: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for api_ver in ("v1beta", "v1"):
+        try:
+            url = f"https://generativelanguage.googleapis.com/{api_ver}/models"
+            resp = requests.get(url, params={"key": api_key}, timeout=20)
+            if resp.status_code != 200:
+                continue
+            for item in resp.json().get("models") or []:
+                methods = item.get("supportedGenerationMethods") or []
+                if "generateContent" not in methods:
+                    continue
+                model_id = _normalize_model_name(str(item.get("name", "")))
+                if not model_id or "flash" not in model_id.lower():
+                    continue
+                pair = (api_ver, model_id)
+                if pair not in seen:
+                    seen.add(pair)
+                    discovered.append(pair)
+        except Exception:
+            continue
+
+    # Prefer newest flash models first if discovered
+    discovered.sort(
+        key=lambda x: (
+            0 if "2.5" in x[1] else (1 if "2.0" in x[1] else (2 if "1.5" in x[1] else 3)),
+            0 if x[0] == "v1beta" else 1,
+            x[1],
+        )
+    )
+    return discovered
+
+
+def _get_candidate_targets(api_key: str) -> list[tuple[str, str]]:
     raw = os.environ.get("GEMINI_MODELS", "").strip()
-    if not raw:
-        return DEFAULT_MODELS
-    models = [m.strip() for m in raw.split(",") if m.strip()]
-    return models or DEFAULT_MODELS
+    if raw:
+        custom = [_normalize_model_name(m) for m in raw.split(",") if m.strip()]
+        return [("v1beta", m) for m in custom] + [("v1", m) for m in custom]
+
+    discovered = _discover_models(api_key)
+    if discovered:
+        return discovered
+
+    targets: list[tuple[str, str]] = []
+    for m in FALLBACK_MODELS:
+        targets.append(("v1beta", m))
+        targets.append(("v1", m))
+    return targets
 
 
 def _load_used_topics() -> list[str]:
@@ -106,15 +160,17 @@ def _extract_json_object(text: str) -> dict:
     return json.loads(cleaned[start : end + 1])
 
 
-def _call_gemini(api_key: str, model: str, prompt: str) -> dict:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+def _call_gemini(api_key: str, api_ver: str, model: str, prompt: str) -> dict:
+    url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model}:generateContent"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.8,
-            "responseMimeType": "application/json",
         },
     }
+    if api_ver == "v1beta":
+        payload["generationConfig"]["responseMimeType"] = "application/json"
+
     resp = requests.post(
         url,
         params={"key": api_key},
@@ -122,7 +178,7 @@ def _call_gemini(api_key: str, model: str, prompt: str) -> dict:
         timeout=45,
     )
     if resp.status_code in (429, 403):
-        raise QuotaExhausted(f"Key/quota error ({resp.status_code}) on model {model}")
+        raise QuotaExhausted(f"Key/quota error ({resp.status_code}) on {api_ver}/{model}")
     resp.raise_for_status()
 
     data = resp.json()
@@ -168,16 +224,17 @@ def generate_content(save: bool = False) -> dict:
 
     used_topics = _load_used_topics()
     prompt = _build_prompt(used_topics)
-    models = _get_models()
 
     last_error = None
     quota_hits = 0
-    total_attempts = len(keys) * len(models)
+    total_attempts = 0
 
     for key in keys:
-        for model in models:
+        targets = _get_candidate_targets(key)
+        for api_ver, model in targets:
+            total_attempts += 1
             try:
-                result = _call_gemini(key, model, prompt)
+                result = _call_gemini(key, api_ver, model, prompt)
                 if save:
                     mark_topic_used(result["topic"])
                 return result
@@ -187,7 +244,7 @@ def generate_content(save: bool = False) -> dict:
                 print(f"[WARN] {e} -> trying next key/model...")
             except Exception as e:
                 last_error = e
-                print(f"[WARN] Gemini error ({model}): {str(e)[:120]}")
+                print(f"[WARN] Gemini error ({api_ver}/{model}): {str(e)[:120]}")
 
     if quota_hits > 0 and quota_hits >= total_attempts:
         raise QuotaExhausted(f"All Gemini keys/models hit quota limits. Last error: {last_error}")
