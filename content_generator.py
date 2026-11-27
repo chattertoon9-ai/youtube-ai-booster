@@ -17,6 +17,16 @@ FALLBACK_MODELS = [
     "gemini-1.5-flash-8b",
 ]
 
+EXCLUDED_MODEL_TOKENS = (
+    "-tts",
+    "-image",
+    "-audio",
+    "imagen",
+    "veo",
+    "embedding",
+    "aqa",
+)
+
 
 class QuotaExhausted(Exception):
     """Raised when all configured Gemini API keys/models hit quota or rate limits."""
@@ -41,8 +51,13 @@ def _normalize_model_name(name: str) -> str:
     return cleaned
 
 
+def _is_excluded_model(model_id: str) -> bool:
+    lower = model_id.lower()
+    return any(token in lower for token in EXCLUDED_MODEL_TOKENS)
+
+
 def _discover_models(api_key: str) -> list[tuple[str, str]]:
-    """Query ListModels on v1beta and v1 to find models supporting generateContent."""
+    """Query ListModels on v1beta and v1 to find text-capable models supporting generateContent."""
     discovered: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
@@ -57,7 +72,9 @@ def _discover_models(api_key: str) -> list[tuple[str, str]]:
                 if "generateContent" not in methods:
                     continue
                 model_id = _normalize_model_name(str(item.get("name", "")))
-                if not model_id or "flash" not in model_id.lower():
+                if not model_id or _is_excluded_model(model_id):
+                    continue
+                if "flash" not in model_id.lower():
                     continue
                 pair = (api_ver, model_id)
                 if pair not in seen:
@@ -66,10 +83,10 @@ def _discover_models(api_key: str) -> list[tuple[str, str]]:
         except Exception:
             continue
 
-    # Prefer newest flash models first if discovered
     discovered.sort(
         key=lambda x: (
             0 if "2.5" in x[1] else (1 if "2.0" in x[1] else (2 if "1.5" in x[1] else 3)),
+            0 if "lite" not in x[1] else 1,
             0 if x[0] == "v1beta" else 1,
             x[1],
         )
@@ -144,108 +161,3 @@ Return ONLY valid JSON (no markdown fences, no commentary) with this exact struc
   "title": "high-retention mystery title under 85 chars with #shorts",
   "script": "spoken voiceover lines only, no stage directions, speaker labels, or emojis",
   "description": "suspenseful YouTube Shorts description with 3-5 hashtags including #shorts #mystery #unexplained",
-  "tags": ["dark mystery", "unexplained", "mystery shorts", "strange history", "creepy facts"]
-}}
-""".strip()
-
-
-def _extract_json_object(text: str) -> dict:
-    cleaned = text.strip()
-    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError("Model response did not contain a valid JSON object.")
-    return json.loads(cleaned[start : end + 1])
-
-
-def _call_gemini(api_key: str, api_ver: str, model: str, prompt: str) -> dict:
-    url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model}:generateContent"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.8,
-        },
-    }
-    if api_ver == "v1beta":
-        payload["generationConfig"]["responseMimeType"] = "application/json"
-
-    resp = requests.post(
-        url,
-        params={"key": api_key},
-        json=payload,
-        timeout=45,
-    )
-    if resp.status_code in (429, 403):
-        raise QuotaExhausted(f"Key/quota error ({resp.status_code}) on {api_ver}/{model}")
-    resp.raise_for_status()
-
-    data = resp.json()
-    candidates = data.get("candidates") or []
-    if not candidates:
-        raise ValueError("Empty candidates from Gemini API.")
-    parts = ((candidates[0].get("content") or {}).get("parts")) or []
-    raw_text = "".join(str(p.get("text", "")) for p in parts).strip()
-    if not raw_text:
-        raise ValueError("Empty text response from Gemini API.")
-
-    parsed = _extract_json_object(raw_text)
-    topic = str(parsed.get("topic", "")).strip() or "Unexplained Anomaly"
-    title = str(parsed.get("title", "")).strip() or f"{topic} #shorts"
-    script = str(parsed.get("script", "")).strip()
-    description = (
-        str(parsed.get("description", "")).strip()
-        or f"{title}\n\n#shorts #mystery #unexplained"
-    )
-    raw_tags = parsed.get("tags")
-    tags = (
-        [str(t).strip() for t in raw_tags if str(t).strip()]
-        if isinstance(raw_tags, list)
-        else ["dark mystery", "unexplained", "mystery shorts", "shorts"]
-    )
-
-    if not script:
-        raise ValueError("Generated script was empty.")
-
-    return {
-        "topic": topic,
-        "title": title,
-        "script": script,
-        "description": description,
-        "tags": tags,
-    }
-
-
-def generate_content(save: bool = False) -> dict:
-    keys = _get_api_keys()
-    if not keys:
-        raise QuotaExhausted("No GEMINI_API_KEY_1..15 or GEMINI_API_KEY found in environment.")
-
-    used_topics = _load_used_topics()
-    prompt = _build_prompt(used_topics)
-
-    last_error = None
-    quota_hits = 0
-    total_attempts = 0
-
-    for key in keys:
-        targets = _get_candidate_targets(key)
-        for api_ver, model in targets:
-            total_attempts += 1
-            try:
-                result = _call_gemini(key, api_ver, model, prompt)
-                if save:
-                    mark_topic_used(result["topic"])
-                return result
-            except QuotaExhausted as e:
-                quota_hits += 1
-                last_error = e
-                print(f"[WARN] {e} -> trying next key/model...")
-            except Exception as e:
-                last_error = e
-                print(f"[WARN] Gemini error ({api_ver}/{model}): {str(e)[:120]}")
-
-    if quota_hits > 0 and quota_hits >= total_attempts:
-        raise QuotaExhausted(f"All Gemini keys/models hit quota limits. Last error: {last_error}")
-    raise RuntimeError(f"Failed to generate content after {total_attempts} attempts. Last error: {last_error}")
