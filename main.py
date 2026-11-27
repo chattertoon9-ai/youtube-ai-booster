@@ -63,6 +63,17 @@ BACKUP_TOPICS = [
 ]
 
 
+# Description ke end me ye line judegi taake log comment karein
+COMMENT_CTA = "💬 Comment karke apna suggestion ya next topic batao!"
+
+
+def add_comment_cta(description):
+    description = str(description).strip()
+    if COMMENT_CTA in description:
+        return description
+    return f"{description}\n\n{COMMENT_CTA}"
+
+
 class QuotaExhausted(Exception):
     """Sab keys/models ka daily quota khatam."""
 
@@ -267,6 +278,7 @@ Category for this video: {category}
 Random seed: {seed}
 
 Create ONE brand-new, unique video idea.
+The script must end with one short line inviting viewers to comment their suggestions or the next topic they want.
 
 STRICT RULE: Do NOT repeat or closely resemble any of these old topics:
 {json.dumps(recent, ensure_ascii=False)}
@@ -348,6 +360,8 @@ def generate_content(save=True):
             "No new topic available (Gemini + backup topics dono khatam). "
             "BACKUP_TOPICS mein aur topics add karo ya used_topics.json purana clear karo."
         )
+
+    content["description"] = add_comment_cta(content.get("description", ""))
 
     # Step 4: History save (sirf agar save=True)
     if save:
