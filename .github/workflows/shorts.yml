@@ -59,7 +59,14 @@ jobs:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_cLIENT_SECRET: ${{ secrets.YOUTUBE_cLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-    
+    export GEMINI_API_KEY_1="your_gemini_key"
+export PIXABAY_API_KEY="your_pixabay_key"
+export YOUTUBE_CLIENT_ID="your_client_id"
+export YOUTUBE_CLIENT_SECRET="your_client_secret"
+export YOUTUBE_REFRESH_TOKEN="your_refresh_token"
+export DRY_RUN="0"
+
+python main.py
         run: python main.py
 
       - name: Save updated topic history
