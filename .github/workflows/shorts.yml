@@ -47,9 +47,9 @@ jobs:
           PYTHONPATH: "."
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
-          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
-          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          Youtube_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          Youtube_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          Youtube_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
