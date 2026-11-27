@@ -1,22 +1,13 @@
 """
-Mysterious AI - YouTube Shorts auto pipeline
+Mysterious AI - YouTube Shorts auto pipeline (Pro Level)
 
 Flow:
-1. content_generator.generate_content()  -> topic/title/script/description/tags
-2. Voiceover  (edge-tts, fallback gTTS)
-3. Images     (Pixabay, fallback gradient backgrounds)
-4. Video      (MoviePy, 720x1280, captions drawn with Pillow)
-5. Upload     (YouTube Data API, comments ON, not "made for kids")
-6. mark_topic_used() sirf upload success ke baad
-
-Env (GitHub Secrets):
-  GEMINI_API_KEY_1..15        (content_generator.py use karta hai)
-  PIXABAY_API_KEY             (optional, nahi to gradient background)
-  YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN
-  (ya YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN)
-Optional env:
-  DRY_RUN=1                   video banao par upload mat karo (test ke liye)
-  TTS_VOICE                   default en-US-AndrewNeural
+1. content_generator.generate_content() -> topic/title/script/description/tags
+2. Voiceover (edge-tts, fallback gTTS)
+3. Visuals   (Pixabay vertical/high-res photos, fallback atmospheric dark gradients)
+4. Video     (MoviePy 720x1280, Ken Burns zoom + subtle pan, vignette + crisp captions)
+5. Upload    (YouTube Data API v3, comments enabled, not made for kids)
+6. mark_topic_used() after successful upload
 """
 import asyncio
 import io
@@ -31,9 +22,8 @@ from pathlib import Path
 
 import numpy as np
 import requests
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
-# Ensure repo root / script directory and common subdirs are on sys.path
 BASE_DIR = Path(__file__).resolve().parent
 for candidate in (BASE_DIR, BASE_DIR.parent, BASE_DIR / "src", BASE_DIR / "app"):
     if candidate.exists():
@@ -45,7 +35,7 @@ from content_generator import QuotaExhausted, generate_content, mark_topic_used
 
 W, H = 720, 1280
 FPS = 24
-SECONDS_PER_IMAGE = 4.5
+SECONDS_PER_IMAGE = 4.2
 WORDS_PER_CAPTION = 4
 OUT_DIR = str(BASE_DIR / "output")
 TTS_VOICE = os.environ.get("TTS_VOICE", "en-US-AndrewNeural")
@@ -75,7 +65,7 @@ def _get_yt_env(*candidates: str) -> str:
 async def _edge_tts(text, path):
     import edge_tts
 
-    communicate = edge_tts.Communicate(text, TTS_VOICE, rate="+5%")
+    communicate = edge_tts.Communicate(text, TTS_VOICE, rate="+4%", pitch="-2Hz")
     await asyncio.wait_for(communicate.save(path), timeout=90)
 
 
@@ -83,53 +73,76 @@ def make_voice(text, path):
     try:
         asyncio.run(_edge_tts(text, path))
         if os.path.exists(path) and os.path.getsize(path) > 1000:
-            print("[OK] Voice: edge-tts")
+            print(f"[OK] Voice: edge-tts ({TTS_VOICE})")
             return path
     except Exception as e:
-        print(f"[WARN] edge-tts fail ({str(e)[:100]}), gTTS try kar raha hoon...")
+        print(f"[WARN] edge-tts fail ({str(e)[:120]}), trying gTTS...")
 
     from gtts import gTTS
 
-    gTTS(text=text, lang="en").save(path)
+    gTTS(text=text, lang="en", tld="com").save(path)
     print("[OK] Voice: gTTS")
     return path
 
 
 # ---------------- IMAGES ----------------
+def _build_vignette_mask(w, h):
+    y, x = np.ogrid[:h, :w]
+    cx, cy = w / 2.0, h / 2.0
+    nx = (x - cx) / (w * 0.55)
+    ny = (y - cy) / (h * 0.55)
+    dist = np.sqrt(nx * nx + ny * ny)
+    vignette = np.clip(1.0 - 0.45 * (dist ** 1.6), 0.35, 1.0)
+    return vignette.reshape(h, w, 1)
+
+
+VIGNETTE_ARR = _build_vignette_mask(W, H)
+
+
 def _cover(img, w, h):
     r = max(w / img.width, h / img.height)
-    nw, nh = int(img.width * r) + 1, int(img.height * r) + 1
+    nw, nh = int(img.width * r) + 2, int(img.height * r) + 2
     img = img.resize((nw, nh), Image.LANCZOS)
     left, top = (nw - w) // 2, (nh - h) // 2
     img = img.crop((left, top, left + w, top + h))
-    # thoda dark karo taake captions saaf dikhein
-    return ImageEnhance.Brightness(img).enhance(0.65)
+    img = ImageEnhance.Contrast(img).enhance(1.12)
+    img = ImageEnhance.Brightness(img).enhance(0.62)
+    arr = np.asarray(img, dtype=np.float32) * VIGNETTE_ARR
+    return Image.fromarray(np.clip(arr, 0, 255).astype("uint8"), "RGB")
 
 
 def _gradient(w, h):
-    c1 = np.array([random.randint(10, 90) for _ in range(3)], dtype=float)
-    c2 = np.array([random.randint(60, 200) for _ in range(3)], dtype=float)
+    palettes = [
+        ((10, 14, 28), (48, 18, 56)),
+        ((8, 22, 32), (24, 58, 68)),
+        ((24, 12, 18), (68, 24, 28)),
+        ((12, 16, 24), (36, 44, 66)),
+    ]
+    c1_rgb, c2_rgb = random.choice(palettes)
+    c1 = np.array(c1_rgb, dtype=np.float32)
+    c2 = np.array(c2_rgb, dtype=np.float32)
     t = np.linspace(0, 1, h).reshape(h, 1, 1)
-    arr = (c1 * (1 - t) + c2 * t) * np.ones((h, w, 1))
-    return Image.fromarray(arr.astype("uint8"), "RGB")
+    arr = (c1 * (1.0 - t) + c2 * t) * np.ones((h, w, 1), dtype=np.float32)
+    arr = np.clip(arr * VIGNETTE_ARR, 0, 255).astype("uint8")
+    return Image.fromarray(arr, "RGB").filter(ImageFilter.GaussianBlur(radius=2))
 
 
 def fetch_images(queries, need):
-    key = os.environ.get("PIXABAY_API_KEY")
+    key = os.environ.get("PIXABAY_API_KEY", "").strip()
     urls = []
     if key:
         for q in queries:
-            if len(urls) >= need:
+            if len(urls) >= need * 2:
                 break
             try:
                 r = requests.get(
                     "https://pixabay.com/api/",
                     params={
                         "key": key,
-                        "q": q[:100],
+                        "q": str(q)[:100],
                         "image_type": "photo",
                         "orientation": "vertical",
-                        "min_height": 1000,
+                        "min_height": 900,
                         "safesearch": "true",
                         "per_page": 20,
                     },
@@ -139,13 +152,13 @@ def fetch_images(queries, need):
                 hits = r.json().get("hits", [])
                 random.shuffle(hits)
                 for h in hits:
-                    u = h.get("largeImageURL")
+                    u = h.get("largeImageURL") or h.get("webformatURL")
                     if u and u not in urls:
                         urls.append(u)
             except Exception as e:
-                print(f"[WARN] Pixabay '{q}' fail: {str(e)[:100]}")
+                print(f"[WARN] Pixabay '{q}' fail: {str(e)[:110]}")
     else:
-        print("[WARN] PIXABAY_API_KEY nahi mili, gradient background use hoga")
+        print("[WARN] PIXABAY_API_KEY not set, using atmospheric gradient backgrounds.")
 
     images = []
     for u in urls:
@@ -157,7 +170,7 @@ def fetch_images(queries, need):
             img = Image.open(io.BytesIO(r.content)).convert("RGB")
             images.append(_cover(img, W, H))
         except Exception as e:
-            print(f"[WARN] Image download fail: {str(e)[:100]}")
+            print(f"[WARN] Image download fail: {str(e)[:110]}")
 
     while len(images) < need:
         images.append(_gradient(W, H))
@@ -174,31 +187,55 @@ def _font(size):
 
 
 def build_captions(script, duration):
-    """Script ko 4-4 words ke chunks me todo, audio length ke hisab se time baanto."""
+    """Split script into punchy 4-word chunks timed proportionally to voice duration."""
     words = script.split()
     chunks = [
-        " ".join(words[i:i + WORDS_PER_CAPTION])
+        " ".join(words[i : i + WORDS_PER_CAPTION])
         for i in range(0, len(words), WORDS_PER_CAPTION)
     ]
     weights = [max(len(c), 1) for c in chunks]
     total = float(sum(weights))
-    font = _font(56)
+    font = _font(58)
     caps, t = [], 0.0
+
     for chunk, wgt in zip(chunks, weights):
         dur = duration * wgt / total
         overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(overlay)
-        text = "\n".join(textwrap.wrap(chunk, width=16))
+        wrapped = "\n".join(textwrap.wrap(chunk, width=16))
+
+        # Soft dark backing pill behind caption for high contrast
+        bbox = d.multiline_textbbox(
+            (W // 2, int(H * 0.62)),
+            wrapped,
+            font=font,
+            anchor="ma",
+            align="center",
+            spacing=12,
+            stroke_width=6,
+        )
+        pad_x, pad_y = 28, 16
+        d.rounded_rectangle(
+            (
+                max(24, bbox[0] - pad_x),
+                max(24, bbox[1] - pad_y),
+                min(W - 24, bbox[2] + pad_x),
+                min(H - 24, bbox[3] + pad_y),
+            ),
+            radius=22,
+            fill=(0, 0, 0, 130),
+        )
+
         d.multiline_text(
-            (W // 2, int(H * 0.60)),
-            text,
+            (W // 2, int(H * 0.62)),
+            wrapped,
             font=font,
             fill=(255, 255, 255, 255),
-            stroke_width=5,
+            stroke_width=6,
             stroke_fill=(0, 0, 0, 255),
             anchor="ma",
             align="center",
-            spacing=10,
+            spacing=12,
         )
         caps.append((t, t + dur, overlay))
         t += dur
@@ -210,11 +247,13 @@ def render_video(content, audio_path, out_path):
     from moviepy.editor import AudioFileClip, VideoClip
 
     audio = AudioFileClip(audio_path)
-    duration = audio.duration + 0.5
+    duration = audio.duration + 0.6
 
     n_img = max(1, math.ceil(duration / SECONDS_PER_IMAGE))
     queries = [str(t) for t in content["tags"][:3]] + [
-        content["topic"], "abstract background", "technology",
+        content["topic"],
+        "dark mystery",
+        "night fog",
     ]
     images = fetch_images(queries, n_img)
     seg = duration / n_img
@@ -222,16 +261,21 @@ def render_video(content, audio_path, out_path):
 
     def make_frame(t):
         i = min(int(t / seg), n_img - 1)
-        p = (t - i * seg) / seg
-        scale = 1.0 + 0.08 * p           # halka zoom-in
+        p = max(0.0, min(1.0, (t - i * seg) / seg))
+        scale = 1.04 + 0.08 * p
         cw, ch = W / scale, H / scale
-        x0, y0 = (W - cw) / 2, (H - ch) / 2
+        drift_x = ((i % 2) * 2 - 1) * (p - 0.5) * 24.0
+        drift_y = (-1 if i % 3 == 0 else 1) * (p - 0.5) * 20.0
+        x0 = max(0.0, min(W - cw, (W - cw) / 2.0 + drift_x))
+        y0 = max(0.0, min(H - ch, (H - ch) / 2.0 + drift_y))
+
         frame = images[i].resize(
             (W, H), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch)
         ).convert("RGBA")
+
         for start, end, overlay in captions:
             if start <= t < end:
-                frame.alpha_composite(overlay)
+                frame = Image.alpha_composite(frame, overlay)
                 break
         return np.asarray(frame.convert("RGB"))
 
@@ -276,7 +320,7 @@ def upload_video(path, content):
 
     if not all([refresh_token, client_id, client_secret]):
         raise RuntimeError(
-            "Missing YouTube OAuth credentials. Check YT_* or YOUTUBE_* secrets in GitHub Actions."
+            "Missing YouTube OAuth credentials. Verify YT_* or YOUTUBE_* secrets in GitHub Actions."
         )
 
     creds = Credentials(
@@ -307,11 +351,13 @@ def upload_video(path, content):
         },
         "status": {
             "privacyStatus": "public",
-            "selfDeclaredMadeForKids": False,   # comments on rakhne ke liye zaroori
+            "selfDeclaredMadeForKids": False,
         },
     }
 
-    media = MediaFileUpload(path, mimetype="video/mp4", chunksize=4 * 1024 * 1024, resumable=True)
+    media = MediaFileUpload(
+        path, mimetype="video/mp4", chunksize=4 * 1024 * 1024, resumable=True
+    )
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
 
     response, retries = None, 0
@@ -324,7 +370,7 @@ def upload_video(path, content):
             if e.resp.status in (500, 502, 503, 504) and retries < 5:
                 retries += 1
                 wait = 2 ** retries
-                print(f"[UPLOAD] server error {e.resp.status}, {wait}s baad retry...")
+                print(f"[UPLOAD] server error {e.resp.status}, retrying in {wait}s...")
                 time.sleep(wait)
                 continue
             raise
@@ -359,7 +405,7 @@ def main():
     print("[STEP 3/4] Video ready")
 
     if DRY_RUN:
-        print("[DRY_RUN] Upload skip kiya gaya.")
+        print("[DRY_RUN] Upload skipped.")
         return
 
     upload_video(video_path, content)
