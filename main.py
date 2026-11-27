@@ -198,4 +198,141 @@ def render_video(content, audio_path, out_path):
     duration = audio.duration + 0.5
 
     n_img = max(1, math.ceil(duration / SECONDS_PER_IMAGE))
-    queries = [str(t) for t in content["tags"]
+    queries = [str(t) for t in content["tags"][:3]] + [
+        content["topic"], "abstract background", "technology",
+    ]
+    images = fetch_images(queries, n_img)
+    seg = duration / n_img
+    captions = build_captions(content["script"], audio.duration)
+
+    def make_frame(t):
+        i = min(int(t / seg), n_img - 1)
+        p = (t - i * seg) / seg
+        scale = 1.0 + 0.08 * p           # halka zoom-in
+        cw, ch = W / scale, H / scale
+        x0, y0 = (W - cw) / 2, (H - ch) / 2
+        frame = images[i].resize(
+            (W, H), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch)
+        ).convert("RGBA")
+        for start, end, overlay in captions:
+            if start <= t < end:
+                frame.alpha_composite(overlay)
+                break
+        return np.asarray(frame.convert("RGB"))
+
+    clip = VideoClip(make_frame, duration=duration).set_audio(audio)
+    try:
+        clip.write_videofile(
+            out_path,
+            fps=FPS,
+            codec="libx264",
+            audio_codec="aac",
+            preset="ultrafast",
+            threads=2,
+            ffmpeg_params=["-pix_fmt", "yuv420p"],
+            logger=None,
+        )
+    finally:
+        clip.close()
+        audio.close()
+    print(f"[OK] Video ready: {out_path} ({duration:.1f}s)")
+    return out_path
+
+
+# ---------------- YOUTUBE UPLOAD ----------------
+def upload_video(path, content):
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    from googleapiclient.http import MediaFileUpload
+
+    creds = Credentials(
+        None,
+        refresh_token=os.environ["YT_REFRESH_TOKEN"],
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=os.environ["YT_CLIENT_ID"],
+        client_secret=os.environ["YT_CLIENT_SECRET"],
+        scopes=["https://www.googleapis.com/auth/youtube.upload"],
+    )
+    youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+    title = re.sub(r"[<>]", "", content["title"]).strip()[:100]
+    tags = []
+    total = 0
+    for t in content["tags"]:
+        t = re.sub(r"[<>]", "", str(t)).strip()
+        if t and total + len(t) < 450:
+            tags.append(t)
+            total += len(t) + 1
+
+    body = {
+        "snippet": {
+            "title": title,
+            "description": content["description"][:4900],
+            "tags": tags,
+            "categoryId": "22",
+        },
+        "status": {
+            "privacyStatus": "public",
+            "selfDeclaredMadeForKids": False,   # comments on rakhne ke liye zaroori
+        },
+    }
+
+    media = MediaFileUpload(path, mimetype="video/mp4", chunksize=4 * 1024 * 1024, resumable=True)
+    request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+
+    response, retries = None, 0
+    while response is None:
+        try:
+            status, response = request.next_chunk()
+            if status:
+                print(f"[UPLOAD] {int(status.progress() * 100)}%")
+        except HttpError as e:
+            if e.resp.status in (500, 502, 503, 504) and retries < 5:
+                retries += 1
+                wait = 2 ** retries
+                print(f"[UPLOAD] server error {e.resp.status}, {wait}s baad retry...")
+                time.sleep(wait)
+                continue
+            raise
+        except (ConnectionError, TimeoutError) as e:
+            if retries < 5:
+                retries += 1
+                print(f"[UPLOAD] network error ({e}), retry {retries}/5...")
+                time.sleep(2 ** retries)
+                continue
+            raise
+
+    video_id = response["id"]
+    print(f"[OK] Uploaded: https://youtube.com/shorts/{video_id}")
+    return video_id
+
+
+# ---------------- MAIN ----------------
+def main():
+    os.makedirs(OUT_DIR, exist_ok=True)
+
+    try:
+        content = generate_content(save=False)
+    except QuotaExhausted as e:
+        print(f"[FATAL] {e}")
+        sys.exit(1)
+    print(f"[STEP 1/4] Content ready: {content['title']}")
+
+    audio_path = make_voice(content["script"], os.path.join(OUT_DIR, "voice.mp3"))
+    print("[STEP 2/4] Voice ready")
+
+    video_path = render_video(content, audio_path, os.path.join(OUT_DIR, "short.mp4"))
+    print("[STEP 3/4] Video ready")
+
+    if DRY_RUN:
+        print("[DRY_RUN] Upload skip kiya gaya.")
+        return
+
+    upload_video(video_path, content)
+    mark_topic_used(content["topic"])
+    print("[STEP 4/4] Upload done, topic history updated")
+
+
+if __name__ == "__main__":
+    main()
