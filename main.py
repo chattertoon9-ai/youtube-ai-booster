@@ -17,7 +17,7 @@ MODELS = [
     m.strip()
     for m in os.environ.get(
         "GEMINI_MODELS",
-        "gemini-2.5-flash,gemini-2.5-flash-lite",
+        "gemini-3.8-flash,gemini-3.5-flash,gemini-3.5-flash-lite",
     ).split(",")
     if m.strip()
 ]
@@ -184,11 +184,21 @@ def _clean_result(data):
 
 
 # ---------------- GEMINI (key rotation + model fallback) ----------------
+def _gen_config(model_name, temperature):
+    cfg = {"response_mime_type": "application/json"}
+    # Gemini 3.x models me temperature/top_p/top_k allowed nahi hain, isliye nahi bhejte
+    if not model_name.startswith("gemini-3"):
+        cfg["temperature"] = temperature
+        cfg["top_p"] = 0.95
+    return cfg
+
+
 def ask_gemini(prompt, temperature=1.1):
     """
     Har model ke liye saari keys try karta hai.
     - PerDay quota error  -> (key, model) ko aaj ke liye band, agla try
     - Per-minute 429      -> thoda wait karke same key pe retry
+    - 404 (model nahi)    -> poora model skip, agla model
     - Bad JSON / 5xx      -> agla try
     - Sab quota khatam    -> QuotaExhausted
     """
@@ -197,7 +207,11 @@ def ask_gemini(prompt, temperature=1.1):
     last_err = None
 
     for model_name in MODELS:
+        model_missing = False
+
         for key in keys:
+            if model_missing:
+                break
             if is_exhausted(key, model_name):
                 continue
 
@@ -206,11 +220,7 @@ def ask_gemini(prompt, temperature=1.1):
                     genai.configure(api_key=key)
                     model = genai.GenerativeModel(
                         model_name,
-                        generation_config={
-                            "temperature": temperature,
-                            "top_p": 0.95,
-                            "response_mime_type": "application/json",
-                        },
+                        generation_config=_gen_config(model_name, temperature),
                     )
                     response = model.generate_content(
                         prompt,
@@ -242,20 +252,12 @@ def ask_gemini(prompt, temperature=1.1):
                         continue
 
                     if "404" in msg or "not found" in msg.lower():
-                        print(f"[SKIP] Model available nahi: {model_name}")
-                        # is model ki baaki keys try karna bekar hai
+                        print(f"[SKIP] Model available nahi: {model_name} -> {msg[:120]}")
+                        model_missing = True
                         break
 
-                    print(f"[WARN] {model_name} fail ({msg[:80]}), agla try...")
+                    print(f"[WARN] {model_name} fail ({msg[:120]}), agla try...")
                     break
-            else:
-                continue
-
-            # 404 par poora model skip karo
-            if last_err is not None and (
-                "404" in str(last_err) or "not found" in str(last_err).lower()
-            ):
-                break
 
     if all_exhausted():
         raise QuotaExhausted(
