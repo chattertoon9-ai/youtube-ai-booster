@@ -38,6 +38,7 @@ jobs:
 
       - name: Execute Mysterious AI Auto Pipeline
         env:
+          PYTHONPATH: "."
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
