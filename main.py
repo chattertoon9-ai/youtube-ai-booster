@@ -204,7 +204,6 @@ def build_captions(script, duration):
         d = ImageDraw.Draw(overlay)
         wrapped = "\n".join(textwrap.wrap(chunk, width=16))
 
-        # Soft dark backing pill behind caption for high contrast
         bbox = d.multiline_textbbox(
             (W // 2, int(H * 0.62)),
             wrapped,
@@ -300,6 +299,7 @@ def render_video(content, audio_path, out_path):
 
 # ---------------- YOUTUBE UPLOAD ----------------
 def upload_video(path, content):
+    from google.auth.exceptions import RefreshError
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
@@ -331,56 +331,64 @@ def upload_video(path, content):
         client_secret=client_secret,
         scopes=["https://www.googleapis.com/auth/youtube.upload"],
     )
-    youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
 
-    title = re.sub(r"[<>]", "", content["title"]).strip()[:100]
-    tags = []
-    total = 0
-    for t in content["tags"]:
-        t = re.sub(r"[<>]", "", str(t)).strip()
-        if t and total + len(t) < 450:
-            tags.append(t)
-            total += len(t) + 1
+    try:
+        youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
 
-    body = {
-        "snippet": {
-            "title": title,
-            "description": content["description"][:4900],
-            "tags": tags,
-            "categoryId": "22",
-        },
-        "status": {
-            "privacyStatus": "public",
-            "selfDeclaredMadeForKids": False,
-        },
-    }
+        title = re.sub(r"[<>]", "", content["title"]).strip()[:100]
+        tags = []
+        total = 0
+        for t in content["tags"]:
+            t = re.sub(r"[<>]", "", str(t)).strip()
+            if t and total + len(t) < 450:
+                tags.append(t)
+                total += len(t) + 1
 
-    media = MediaFileUpload(
-        path, mimetype="video/mp4", chunksize=4 * 1024 * 1024, resumable=True
-    )
-    request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+        body = {
+            "snippet": {
+                "title": title,
+                "description": content["description"][:4900],
+                "tags": tags,
+                "categoryId": "22",
+            },
+            "status": {
+                "privacyStatus": "public",
+                "selfDeclaredMadeForKids": False,
+            },
+        }
 
-    response, retries = None, 0
-    while response is None:
-        try:
-            status, response = request.next_chunk()
-            if status:
-                print(f"[UPLOAD] {int(status.progress() * 100)}%")
-        except HttpError as e:
-            if e.resp.status in (500, 502, 503, 504) and retries < 5:
-                retries += 1
-                wait = 2 ** retries
-                print(f"[UPLOAD] server error {e.resp.status}, retrying in {wait}s...")
-                time.sleep(wait)
-                continue
-            raise
-        except (ConnectionError, TimeoutError) as e:
-            if retries < 5:
-                retries += 1
-                print(f"[UPLOAD] network error ({e}), retry {retries}/5...")
-                time.sleep(2 ** retries)
-                continue
-            raise
+        media = MediaFileUpload(
+            path, mimetype="video/mp4", chunksize=4 * 1024 * 1024, resumable=True
+        )
+        request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+
+        response, retries = None, 0
+        while response is None:
+            try:
+                status, response = request.next_chunk()
+                if status:
+                    print(f"[UPLOAD] {int(status.progress() * 100)}%")
+            except HttpError as e:
+                if e.resp.status in (500, 502, 503, 504) and retries < 5:
+                    retries += 1
+                    wait = 2 ** retries
+                    print(f"[UPLOAD] server error {e.resp.status}, retrying in {wait}s...")
+                    time.sleep(wait)
+                    continue
+                raise
+            except (ConnectionError, TimeoutError) as e:
+                if retries < 5:
+                    retries += 1
+                    print(f"[UPLOAD] network error ({e}), retry {retries}/5...")
+                    time.sleep(2 ** retries)
+                    continue
+                raise
+    except RefreshError as e:
+        raise RuntimeError(
+            "YouTube OAuth RefreshError (likely invalid_grant): regenerate YOUTUBE_REFRESH_TOKEN "
+            "using the exact YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET from the same Google Cloud "
+            "project (with YouTube Data API v3 enabled), and update GitHub Secrets without extra spaces."
+        ) from e
 
     video_id = response["id"]
     print(f"[OK] Uploaded: https://youtube.com/shorts/{video_id}")
