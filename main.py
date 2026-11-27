@@ -17,7 +17,7 @@ MODELS = [
     m.strip()
     for m in os.environ.get(
         "GEMINI_MODELS",
-        "gemini-3.8-flash,gemini-3.5-flash,gemini-3.5-flash-lite",
+        "gemini-3.5-flash-lite,gemini-3.5-flash,gemini-3.8-flash",
     ).split(",")
     if m.strip()
 ]
@@ -64,14 +64,19 @@ BACKUP_TOPICS = [
 
 
 # Description ke end me ye line judegi taake log comment karein
-COMMENT_CTA = "💬 Comment karke apna suggestion ya next topic batao!"
+COMMENT_CTA = "💬 Comment your suggestion or the next topic you want to see!"
 
 
-def add_comment_cta(description):
-    description = str(description).strip()
-    if COMMENT_CTA in description:
-        return description
-    return f"{description}\n\n{COMMENT_CTA}"
+def finalize_description(description, tags):
+    """Gemini ke toote hue hashtags hatao, saaf hashtags + comment CTA lagao."""
+    body = re.sub(r"\s*#.*$", "", str(description), flags=re.MULTILINE).strip()
+    tag_list = []
+    for t in tags[:3]:
+        clean = re.sub(r"[^A-Za-z0-9]", "", str(t).title())
+        if clean:
+            tag_list.append("#" + clean)
+    tag_list.append("#Shorts")
+    return f"{body}\n\n{COMMENT_CTA}\n\n{' '.join(tag_list)}"
 
 
 class QuotaExhausted(Exception):
@@ -363,7 +368,7 @@ def generate_content(save=True):
             "BACKUP_TOPICS mein aur topics add karo ya used_topics.json purana clear karo."
         )
 
-    content["description"] = add_comment_cta(content.get("description", ""))
+    content["description"] = finalize_description(content.get("description", ""), content["tags"])
 
     # Step 4: History save (sirf agar save=True)
     if save:
