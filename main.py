@@ -13,6 +13,7 @@ Env (GitHub Secrets):
   GEMINI_API_KEY_1..15        (content_generator.py use karta hai)
   PIXABAY_API_KEY             (optional, nahi to gradient background)
   YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN
+  (ya YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN)
 Optional env:
   DRY_RUN=1                   video banao par upload mat karo (test ke liye)
   TTS_VOICE                   default en-US-AndrewNeural
@@ -54,6 +55,20 @@ FONT_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
 ]
+
+
+def _get_yt_env(*candidates: str) -> str:
+    for name in candidates:
+        val = os.environ.get(name, "").strip()
+        if val:
+            return val
+    upper_targets = {c.upper() for c in candidates}
+    for env_key, env_val in os.environ.items():
+        if env_key.upper() in upper_targets:
+            cleaned = str(env_val).strip()
+            if cleaned:
+                return cleaned
+    return ""
 
 
 # ---------------- VOICE ----------------
@@ -246,12 +261,30 @@ def upload_video(path, content):
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
 
+    refresh_token = _get_yt_env(
+        "YT_REFRESH_TOKEN", "YOUTUBE_REFRESH_TOKEN", "Youtube_REFRESH_TOKEN"
+    )
+    client_id = _get_yt_env(
+        "YT_CLIENT_ID", "YOUTUBE_CLIENT_ID", "Youtube_CLIENT_ID"
+    )
+    client_secret = _get_yt_env(
+        "YT_CLIENT_SECRET",
+        "YOUTUBE_CLIENT_SECRET",
+        "YOUTUBE_cLIENT_SECRET",
+        "Youtube_CLIENT_SECRET",
+    )
+
+    if not all([refresh_token, client_id, client_secret]):
+        raise RuntimeError(
+            "Missing YouTube OAuth credentials. Check YT_* or YOUTUBE_* secrets in GitHub Actions."
+        )
+
     creds = Credentials(
         None,
-        refresh_token=os.environ["Youtube_REFRESH_TOKEN"],
+        refresh_token=refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=os.environ["Youtube_CLIENT_ID"],
-        client_secret=os.environ["Youtube_CLIENT_SECRET"],
+        client_id=client_id,
+        client_secret=client_secret,
         scopes=["https://www.googleapis.com/auth/youtube.upload"],
     )
     youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
