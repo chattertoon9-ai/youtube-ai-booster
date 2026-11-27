@@ -1,6 +1,10 @@
 google-generativeai
 requests
+edge-tts
+gTTS
+moviepy==1.0.3
+numpy<2
+Pillow
 google-api-python-client
 google-auth
-google-auth-oauthlib
 google-auth-httplib2
