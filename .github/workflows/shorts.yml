@@ -42,14 +42,17 @@ jobs:
           ls -la
           find . -maxdepth 4 -not -path '*/.*'
 
-      - name: Execute Mysterious AI Auto Pipeline
+     - name: Execute Mysterious AI Auto Pipeline
         env:
           PYTHONPATH: "."
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          Youtube_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
-          Youtube_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
-          Youtube_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET || secrets.YOUTUBE_cLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET || secrets.YOUTUBE_cLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
